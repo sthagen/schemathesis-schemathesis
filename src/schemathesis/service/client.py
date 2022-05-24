@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 from urllib.parse import urljoin
 
 import attr
@@ -8,7 +8,7 @@ from requests.adapters import HTTPAdapter, Retry
 from ..constants import USER_AGENT
 from .constants import REQUEST_TIMEOUT
 from .metadata import Metadata
-from .models import ApiConfig, AuthResponse, TestRun, UploadResponse
+from .models import AnonymousUploadResponse, ApiConfig, AuthResponse, TestRun, UploadResponse
 
 
 class ServiceClient(requests.Session):
@@ -63,7 +63,10 @@ class ServiceClient(requests.Session):
         data = response.json()
         return AuthResponse(username=data["username"])
 
-    def upload_report(self, report: bytes) -> UploadResponse:
+    def upload_report(self, report: bytes) -> Union[UploadResponse, AnonymousUploadResponse]:
         """Upload test run report to Schemathesis.io."""
-        self.post("/reports/upload/", report, headers={"Content-Type": "application/x-gtar"})
-        return UploadResponse()
+        response = self.post("/reports/upload/", report, headers={"Content-Type": "application/x-gtar"})
+        data = response.json()
+        if "Authorization" in self.headers:
+            return UploadResponse(message=data["message"], report_url=data["report_url"])
+        return AnonymousUploadResponse(message=data["message"], signup_url=data["signup_url"])

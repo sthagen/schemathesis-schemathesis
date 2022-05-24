@@ -13,7 +13,7 @@ from .constants import (
     WORKER_CHECK_PERIOD,
     WORKER_FINISH_TIMEOUT,
 )
-from .events import Completed, Error, Event, Timeout
+from .events import BaseSuccessfulUpload, Completed, Error, Event, SuccessfulAnonymousUpload, SuccessfulUpload, Timeout
 from .handler import ServiceReporter
 from .models import TestRun
 from .report import ReportHandler

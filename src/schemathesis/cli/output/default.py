@@ -299,18 +299,32 @@ def handle_service_integration(context: ExecutionContext) -> None:
         event = wait_for_service_handler(context.service.queue, title)
         color = {
             service.Completed: "green",
+            service.SuccessfulUpload: "green",
+            service.SuccessfulAnonymousUpload: "green",
             service.Error: "red",
             service.Timeout: "red",
         }[event.__class__]
-        status = click.style(event.name, fg=color, bold=True)
+        status = click.style(event.status, fg=color, bold=True)
         click.echo(f"{title}: {status}\r", nl=False)
         click.echo()
         if isinstance(event, service.Completed):
-            report_title = click.style("Report", bold=True)
-            click.echo(f"{report_title}: {event.short_url}")
+            title = click.style("Report", bold=True)
+            click.echo(f"{title}: {event.short_url}")
         if isinstance(event, service.Error):
             click.echo()
             display_service_error(event)
+        if isinstance(event, service.BaseSuccessfulUpload):
+            click.echo()
+            if isinstance(event, service.SuccessfulAnonymousUpload):
+                click.echo("Please, signup to Schemathesis.io to see the report\n")
+                title = click.style("Sign up", bold=True)
+                click.echo(f"{title}: {event.signup_url}")
+            if isinstance(event, service.SuccessfulUpload):
+                title = click.style("Report", bold=True)
+                click.echo(f"{title}: {event.report_url}")
+            if event.message is not None:
+                click.echo()
+                click.echo(event.message)
 
 
 def display_service_error(event: service.Error) -> None:

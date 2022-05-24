@@ -22,5 +22,15 @@ class AuthResponse:
 
 
 @attr.s(slots=True)
-class UploadResponse:
-    pass
+class BaseUploadResponse:
+    message: str = attr.ib()
+
+
+@attr.s(slots=True)
+class UploadResponse(BaseUploadResponse):
+    report_url: str = attr.ib()
+
+
+@attr.s(slots=True)
+class AnonymousUploadResponse(BaseUploadResponse):
+    signup_url: str = attr.ib()

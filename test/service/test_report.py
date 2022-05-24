@@ -7,7 +7,7 @@ import attr
 
 import schemathesis
 from schemathesis.service.metadata import Metadata
-from schemathesis.service.report import Report
+from schemathesis.service.report import ReportWriter
 
 
 @contextmanager
@@ -21,7 +21,7 @@ def read_report(data):
 
 def test_add_events(openapi3_schema_url):
     schema = schemathesis.from_uri(openapi3_schema_url, validate_schema=False)
-    report = Report()
+    report = ReportWriter()
     for event in schemathesis.runner.from_schema(schema).execute():
         report.add_event(event)
     data = report.finish()
@@ -42,7 +42,7 @@ def test_add_events(openapi3_schema_url):
 
 
 def test_metadata():
-    report = Report()
+    report = ReportWriter()
     metadata = Metadata()
     report.add_metadata(metadata)
     data = report.finish()

@@ -8,7 +8,7 @@ from .serialization import serialize_event
 
 
 def start(client: ServiceClient, test_run: TestRun, in_queue: Queue, out_queue: Queue) -> None:
-    """Initialize a new run and start consuming events."""
+    """Start consuming events."""
     try:
         consume_events(client, in_queue, test_run.run_id)
         # Reached a terminal event or a stop marker.
