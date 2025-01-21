@@ -29,6 +29,8 @@ jobs:
             echo "is_prerelease=true" >> $GITHUB_ENV
           else
             echo "is_prerelease=false" >> $GITHUB_ENV
+          fi
+        shell: bash
 
       - name: Docker meta
         id: meta
