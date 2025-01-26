@@ -114,6 +114,8 @@ def create_state_machine(schema: BaseOpenAPISchema) -> type[APIStateMachine]:
                 for link in incoming:
                     bundle_name = f"{link.source.label} -> {link.status_code}"
                     name = _normalize_name(f"{link.status_code} -> {target.label}")
+                    name = _normalize_name(f"{link.source.label} -> {link.status_code} -> {target.label}")
+                    assert name not in rules
                     rules[name] = precondition(is_transition_allowed(bundle_name, link.source.label, target.label))(
                         transition(
                             name=name,
@@ -123,8 +125,9 @@ def create_state_machine(schema: BaseOpenAPISchema) -> type[APIStateMachine]:
                             ),
                         )
                     )
-            elif transitions.operations[target.label].outgoing:
-                # No incoming transitions, but has at least one outgoing transition
+            if transitions.operations[target.label].outgoing and target.method == "post":
+                # Allow POST methods for operations with outgoing transitions.
+                # This approach also includes cases when there is an incoming transition back to POST
                 # For example, POST /users/ -> GET /users/{id}/
                 # The source operation has no prerequisite, but we need to allow this rule to be executed
                 # in order to reach other transitions

@@ -8,15 +8,18 @@ Changelog
 
 - Add ``LoadingStarted`` & ``LoadingFinished`` to the public API.
 
+**Changed**:
+
+- Improve control over API calls in stateful testing to make test scenarios more diverse.
+
 **Fixed**
 
 - Handling of complex regex patterns with multiple quantifiers to respect length constraints during test generation.
 - Internal error during the coverage phase if negated parameter has no ``type``.
 - Internal error in CLI if run with ``PYTHONIOENCODING`` environment variable that is not ``utf8``.
-
-**Changed**:
-
-- Improve control over API calls in stateful testing to make test scenarios more diverse.
+- Overriding of multiple incoming links defined for the same status code in OpenAPI specification.
+- Support for API links where operations can form a cycle (e.g., DELETE -> POST -> DELETE).
+- False positive in the ``ensure_resource_availability`` check.
 
 .. _v4.0.0-alpha.2:
 
