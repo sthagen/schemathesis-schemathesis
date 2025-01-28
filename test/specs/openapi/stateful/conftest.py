@@ -31,6 +31,7 @@ class AppConfig:
     ignored_auth: bool = False
     slowdown: float | int | None = None
     multiple_incoming_links_with_same_status: bool = False
+    duplicate_operation_links: bool = False
     circular_links: bool = False
 
 
@@ -185,9 +186,9 @@ def app_factory(ctx):
     config = AppConfig()
     app.config["schema"] = schema
 
-    users = {}
     next_user_id = 1
     last_modified = "2021-01-01T00:00:00Z"
+    users = {0: {"id": 0, "name": "John Doe", "last_modified": last_modified}}
 
     @app.route("/openapi.json", methods=["GET"])
     def get_spec():
@@ -231,6 +232,8 @@ def app_factory(ctx):
 
         nonlocal next_user_id
         new_user = {"id": next_user_id, "name": name, "last_modified": last_modified}
+        if config.duplicate_operation_links:
+            new_user["manager_id"] = 0
         if not config.ensure_resource_availability:
             # Do not always save the user
             users[next_user_id] = new_user
@@ -321,6 +324,7 @@ def app_factory(ctx):
         slowdown=None,
         multiple_incoming_links_with_same_status=False,
         circular_links: bool = False,
+        duplicate_operation_links: bool = False,
     ):
         config.use_after_free = use_after_free
         config.ensure_resource_availability = ensure_resource_availability
@@ -376,6 +380,15 @@ def app_factory(ctx):
                 "operationId": "createUser",
                 "requestBody": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/NewUser"}}}},
             }
+        if duplicate_operation_links:
+            # Add manager ID to User schema
+            schema["components"]["schemas"]["User"]["properties"]["manager_id"] = {"type": "integer"}
+            # Add second link to the same operation
+            post_links["GetManager"] = {
+                "operationId": "getUser",
+                "parameters": {"userId": "$response.body#/manager_id"},
+                "description": "Get user's manager",
+            }
         return app
 
     return _factory
@@ -399,12 +412,15 @@ def engine_factory(app_factory, app_runner, stop_event):
         max_failures=None,
         unique_data=False,
         configuration=None,
+        include=None,
     ):
         app = app_factory(**(app_kwargs or {}))
         port = app_runner.run_flask_app(app)
         schema = schemathesis.openapi.from_url(f"http://127.0.0.1:{port}/openapi.json").configure(
             **(configuration or {})
         )
+        if include is not None:
+            schema = schema.include(**include)
         config = EngineConfig(
             execution=ExecutionConfig(
                 checks=checks or CHECKS.get_all(),

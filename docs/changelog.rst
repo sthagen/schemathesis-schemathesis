@@ -1,16 +1,30 @@
 Changelog
 =========
 
-:version:`Unreleased <v4.0.0-alpha.2...HEAD>` - TBD
+:version:`Unreleased <v4.0.0-alpha.3...HEAD>` - TBD
 ---------------------------------------------------
+
+**Fixed**
+
+- Handling of multiple API links pointing to the same operation with different parameters.
+
+.. _v4.0.0-alpha.3:
+
+:version:`4.0.0-alpha.3 <v4.0.0-alpha.2...v4.0.0-alpha.3>` - 2025-01-27
+-----------------------------------------------------------------------
 
 **Added**
 
 - Add ``LoadingStarted`` & ``LoadingFinished`` to the public API.
+- Display the random generator seed in CLI output.
 
-**Changed**:
+**Changed**
 
 - Improve control over API calls in stateful testing to make test scenarios more diverse.
+- Improve error message in CLI when the schema has no Open API links.
+- Improve error message in CLI when the schema contains incorrect Open API links.
+- Display the number of covered, selected, and total Open API links in stateful testing output.
+- Vary random seed in subsequent state machine re-runs to avoid repeating all previous sequences.
 
 **Fixed**
 
@@ -19,7 +33,9 @@ Changelog
 - Internal error in CLI if run with ``PYTHONIOENCODING`` environment variable that is not ``utf8``.
 - Overriding of multiple incoming links defined for the same status code in OpenAPI specification.
 - Support for API links where operations can form a cycle (e.g., DELETE -> POST -> DELETE).
+- Incorrect Open API link selection when target operations are filtered out.
 - False positive in the ``ensure_resource_availability`` check.
+- Calculating the number of Open API links selected for testing.
 
 .. _v4.0.0-alpha.2:
 
@@ -98,7 +114,8 @@ A detailed migration guide and complete changelog will follow.
 - Support for ``pytest<7.0``.
 - CLI Options: ``--endpoint``, ``--method``, ``--tag``, ``--operation-id``, ``--skip-deprecated-operations``,
   ``--show-trace``, ``--debug-output-file``, ``--hypothesis-deadline``, ``--hypothesis-report-multiple-bugs``,
-  ``--hypothesis-verbosity``, ``--store-network-log``, ``--pre-run``, ``--dry-run``.
+  ``--hypothesis-verbosity``, ``--store-network-log``, ``--pre-run``, ``--dry-run``, ``--contrib-openapi-formats-uuid``,
+  ``--validate-schema``.
 - Most loader configuration moved to ``schema.configure`` method.
 - ``add_case`` hook.
 - ``schemathesis.contrib.unique_data``.

@@ -19,7 +19,7 @@ Schemathesis dev
  ✅  Stateful tests (in N ms)
 
      Scenarios:    N
-     API Links:    1/1
+     API Links:    1 covered / 1 selected / 1 total
 
      ✅ N passed
 
@@ -37,5 +37,7 @@ Test Phases:
 
 Test cases:
   N generated, N passed, N skipped
+
+Seed: 42
 
 =========================== No issues found in 1.00s ===========================

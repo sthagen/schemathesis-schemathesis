@@ -65,4 +65,6 @@ Failures:
 Test cases:
   1 generated, 1 found 1 unique failures
 
-============================= 1 failures in 1.00s ==============================
+Seed: 42
+
+============================== 1 failure in 1.00s ==============================

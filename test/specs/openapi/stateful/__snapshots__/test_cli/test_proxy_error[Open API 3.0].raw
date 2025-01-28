@@ -17,7 +17,7 @@ Schemathesis dev
  🚫  Stateful tests (in N ms)
 
      Scenarios:    N
-     API Links:    0/4
+     API Links:    0 covered / 4 selected / 4 total
 
      🚫 1 errors
 
@@ -49,4 +49,6 @@ Errors:
 Test cases:
   N generated, N skipped
 
-============================== 1 errors in 1.00s ===============================
+Seed: 42
+
+=============================== 1 error in 1.00s ===============================

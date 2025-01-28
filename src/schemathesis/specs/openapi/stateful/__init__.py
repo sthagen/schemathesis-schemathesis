@@ -76,9 +76,11 @@ def collect_transitions(operations: list[APIOperation]) -> ApiTransitions:
     """Collect all transitions between operations."""
     transitions = ApiTransitions()
 
+    selected_labels = {operation.label for operation in operations}
     for operation in operations:
         for _, link in get_all_links(operation):
-            transitions.add_outgoing(operation.label, link)
+            if link.target.label in selected_labels:
+                transitions.add_outgoing(operation.label, link)
 
     return transitions
 
@@ -113,9 +115,10 @@ def create_state_machine(schema: BaseOpenAPISchema) -> type[APIStateMachine]:
             if incoming:
                 for link in incoming:
                     bundle_name = f"{link.source.label} -> {link.status_code}"
-                    name = _normalize_name(f"{link.status_code} -> {target.label}")
-                    name = _normalize_name(f"{link.source.label} -> {link.status_code} -> {target.label}")
-                    assert name not in rules
+                    name = _normalize_name(
+                        f"{link.source.label} -> {link.status_code} -> {link.name} -> {target.label}"
+                    )
+                    assert name not in rules, name
                     rules[name] = precondition(is_transition_allowed(bundle_name, link.source.label, target.label))(
                         transition(
                             name=name,
