@@ -8,6 +8,7 @@ Added
 
 - ``--report`` unified reporting system with multiple format support.
 - ``--report-dir`` for centralized report storage.
+- Display Open API link definition errors in CLI output.
 
 **Changed**
 
@@ -18,6 +19,7 @@ Added
 - Rename ``--cassette-*`` options -> ``--report=vcr/har`` with format-specific paths.
 - Replace ``shrink`` in ``--hypothesis-phases`` with a separate ``--no-shrink`` option.
 - Simplified filtering options help message.
+- Display the number of selected operations in CLI.
 
 **Fixed**
 
