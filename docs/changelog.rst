@@ -20,11 +20,15 @@ Added
 - Replace ``shrink`` in ``--hypothesis-phases`` with a separate ``--no-shrink`` option.
 - Simplified filtering options help message.
 - Display the number of selected operations in CLI.
+- Improved state machine generation by prioritizing reliable API entry points over random operations.
+- Made operation filtering independent from API base path for more predictable behavior.
 
 **Fixed**
 
 - Handling of multiple API links pointing to the same operation with different parameters.
 - **CLI**: Make exact method filters case insensitive.
+- Internal error in coverage phase when a parameter is mixing keywords for different types.
+- Do not run irrelevant checks on "Unspecified HTTP method" type of coverage scenarios.
 
 **Removed**
 
