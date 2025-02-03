@@ -69,6 +69,52 @@ class ExtractedParam:
 
 
 @dataclass
+class ExtractionFailure:
+    """Represents a failure to extract data from a transition."""
+
+    # e.g., "GetUser"
+    id: str
+    case_id: str
+    # e.g., "POST /users"
+    source: str
+    # e.g., "GET /users/{userId}"
+    target: str
+    # e.g., "userId"
+    parameter_name: str
+    # e.g., "$response.body#/id"
+    expression: str
+    # Previous test cases in the chain, from newest to oldest
+    # Stored as a case + response pair
+    history: list[tuple[Case, Response]]
+    # The actual response that caused the failure
+    response: Response
+    error: Exception | None
+
+    __slots__ = ("id", "case_id", "source", "target", "parameter_name", "expression", "history", "response", "error")
+
+    def __eq__(self, other: object) -> bool:
+        assert isinstance(other, ExtractionFailure)
+        return (
+            self.source == other.source
+            and self.target == other.target
+            and self.id == other.id
+            and self.parameter_name == other.parameter_name
+            and self.expression == other.expression
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.source,
+                self.target,
+                self.id,
+                self.parameter_name,
+                self.expression,
+            )
+        )
+
+
+@dataclass
 class StepOutput:
     """Output from a single transition of a state machine."""
 
@@ -172,7 +218,7 @@ class APIStateMachine(RuleBasedStateMachine):
         kwargs = self.get_call_kwargs(input.case)
         response = self.call(input.case, **kwargs)
         self.after_call(response, input.case)
-        self.validate_response(response, input.case)
+        self.validate_response(response, input.case, **kwargs)
         return StepOutput(response, input.case)
 
     def before_call(self, case: Case) -> None:
@@ -266,7 +312,7 @@ class APIStateMachine(RuleBasedStateMachine):
         return {}
 
     def validate_response(
-        self, response: Response, case: Case, additional_checks: list[CheckFunction] | None = None
+        self, response: Response, case: Case, additional_checks: list[CheckFunction] | None = None, **kwargs: Any
     ) -> None:
         """Validate an API response.
 
@@ -298,4 +344,4 @@ class APIStateMachine(RuleBasedStateMachine):
         all provided checks rather than only the first encountered exception.
         """
         __tracebackhide__ = True
-        case.validate_response(response, additional_checks=additional_checks)
+        case.validate_response(response, additional_checks=additional_checks, transport_kwargs=kwargs)

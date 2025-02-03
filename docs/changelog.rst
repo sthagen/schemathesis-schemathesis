@@ -1,34 +1,45 @@
 Changelog
 =========
 
-:version:`Unreleased <v4.0.0-alpha.3...HEAD>` - TBD
+:version:`Unreleased <v4.0.0-alpha.4...HEAD>` - TBD
 ---------------------------------------------------
 
-Added
+.. _v4.0.0-alpha.4:
+
+:version:`4.0.0-alpha.4 <v4.0.0-alpha.3...v4.0.0-alpha.4>` - 2025-02-03
+-----------------------------------------------------------------------
+
+**Added**
 
 - ``--report`` unified reporting system with multiple format support.
 - ``--report-dir`` for centralized report storage.
-- Display Open API link definition errors in CLI output.
+- Display Open API link definition & extraction errors in CLI output.
 
 **Changed**
 
-- Rename ``--generation-optimize`` -> ``--generation-maximize``.
-- Rename ``--generation-mode`` -> ``-m/--mode``.
-- Rename ``--generation-max-examples`` -> ``-n/--max-examples``.
-- Rename ``--junit-xml`` -> ``--report=junit``.
-- Rename ``--cassette-*`` options -> ``--report=vcr/har`` with format-specific paths.
-- Replace ``shrink`` in ``--hypothesis-phases`` with a separate ``--no-shrink`` option.
-- Simplified filtering options help message.
-- Display the number of selected operations in CLI.
-- Improved state machine generation by prioritizing reliable API entry points over random operations.
-- Made operation filtering independent from API base path for more predictable behavior.
+- Rename ``--generation-optimize`` to ``--generation-maximize``
+- Rename ``--generation-mode`` to ``-m/--mode``
+- Rename ``--generation-max-examples`` to ``-n/--max-examples``
+- Rename ``--junit-xml`` to ``--report=junit``
+- Rename ``--cassette-*`` options to ``--report=vcr/har`` with format-specific paths
+- Replace ``shrink`` in ``--hypothesis-phases`` with a separate ``--no-shrink`` option
+- Simplify help messages for filtering options.
+- Add display of selected operations count in CLI.
+- Improve state machine generation by prioritizing reliable API entry points over random operations.
+- Make operation filtering independent of API base path for more predictable behavior.
+- Improve error message for malformed JSON responses.
+- Return ``UNRESOLVABLE`` sentinel instead of an empty string when Open API runtime expressions can't be evaluated (e.g., when ``$response.body#/id`` is not found)
+- **BREAKING**: The ``validate_response`` method in state machines now accepts the same keyword arguments as ``call``. 
+  If you've overridden this method, update its signature to include ``**kwargs``.
 
 **Fixed**
 
 - Handling of multiple API links pointing to the same operation with different parameters.
-- **CLI**: Make exact method filters case insensitive.
-- Internal error in coverage phase when a parameter is mixing keywords for different types.
-- Do not run irrelevant checks on "Unspecified HTTP method" type of coverage scenarios.
+- **CLI**: Make exact method filters case-insensitive.
+- Internal error in coverage phase when a parameter mixes keywords for different types.
+- Skip irrelevant checks for "Unspecified HTTP method" coverage scenarios.
+- Handle ``verify=False`` properly when specified via ``get_call_kwargs`` on a state machine. :issue:`2713`
+- Preserve test data when unit tests are interrupted via CTRL-C.
 
 **Removed**
 
@@ -150,6 +161,38 @@ A detailed migration guide and complete changelog will follow.
 - ``schemathesis replay`` command.
 - Stateful testing summary (coming later).
 - ``SCHEMA_ANALYSIS`` experimental feature.
+
+.. _v3.39.9:
+
+:version:`3.39.9 <v3.39.8...v3.39.9>` - 2025-02-01
+--------------------------------------------------
+
+**Fixed**
+
+- Internal error in coverage phase when a parameter is mixing keywords for different types.
+- Do not run irrelevant checks on "Unspecified HTTP method" type of coverage scenarios.
+- Ignoring ``verify=False`` when specified via ``get_call_kwargs`` on a state machine. :issue:`2713`
+
+**Changed**
+
+- Slightly improve the error message on malformed JSON.
+
+.. _v3.39.8:
+
+:version:`3.39.8 <v3.39.7...v3.39.8>` - 2025-01-25
+--------------------------------------------------
+
+**Fixed**
+
+- Handling of complex regex patterns with multiple quantifiers to respect length constraints during test generation.
+- Internal error during the coverage phase if negated parameter has no ``type``.
+
+:version:`3.39.7 <v3.39.6...v3.39.7>` - 2025-01-16
+--------------------------------------------------
+
+**Changed**
+
+- Rebuild Docker ``stable`` with the v3 branch.
 
 .. _v3.39.6:
 
