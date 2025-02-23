@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from functools import lru_cache
 
+from schemathesis.core.errors import InternalError
+
 try:  # pragma: no cover
     import re._constants as sre
     import re._parser as sre_parse
@@ -29,7 +31,15 @@ def update_quantifier(pattern: str, min_length: int | None, max_length: int | No
 
     try:
         parsed = sre_parse.parse(pattern)
-        return _handle_parsed_pattern(parsed, pattern, min_length, max_length)
+        updated = _handle_parsed_pattern(parsed, pattern, min_length, max_length)
+        try:
+            re.compile(updated)
+        except re.error as exc:
+            raise InternalError(
+                f"The combination of min_length={min_length} and max_length={max_length} applied to the original pattern '{pattern}' resulted in an invalid regex: '{updated}'. "
+                "This indicates a bug in the regex quantifier merging logic"
+            ) from exc
+        return updated
     except re.error:
         # Invalid pattern
         return pattern
@@ -261,13 +271,18 @@ def _handle_repeat_quantifier(
     min_length, max_length = _build_size(min_repeat, max_repeat, min_length, max_length)
     if min_length > max_length:
         return pattern
-    return f"({_strip_quantifier(pattern).strip(')(')})" + _build_quantifier(min_length, max_length)
+    inner = _strip_quantifier(pattern)
+    if inner.startswith("(") and inner.endswith(")"):
+        inner = inner[1:-1]
+    return f"({inner})" + _build_quantifier(min_length, max_length)
 
 
 def _handle_literal_or_in_quantifier(pattern: str, min_length: int | None, max_length: int | None) -> str:
     """Handle literal or character class quantifiers."""
     min_length = 1 if min_length is None else max(min_length, 1)
-    return f"({pattern.strip(')(')})" + _build_quantifier(min_length, max_length)
+    if pattern.startswith("(") and pattern.endswith(")"):
+        pattern = pattern[1:-1]
+    return f"({pattern})" + _build_quantifier(min_length, max_length)
 
 
 def _build_quantifier(minimum: int | None, maximum: int | None) -> str:
@@ -294,10 +309,12 @@ def _build_size(min_repeat: int, max_repeat: int, min_length: int | None, max_le
 def _strip_quantifier(pattern: str) -> str:
     """Remove quantifier from the pattern."""
     # Lazy & posessive quantifiers
-    if pattern.endswith(("*?", "+?", "??", "*+", "?+", "++")):
-        return pattern[:-2]
-    if pattern.endswith(("?", "*", "+")):
-        pattern = pattern[:-1]
+    for marker in ("*?", "+?", "??", "*+", "?+", "++"):
+        if pattern.endswith(marker) and not pattern.endswith(rf"\{marker}"):
+            return pattern[:-2]
+    for marker in ("?", "*", "+"):
+        if pattern.endswith(marker) and not pattern.endswith(rf"\{marker}"):
+            pattern = pattern[:-1]
     if pattern.endswith("}") and "{" in pattern:
         # Find the start of the exact quantifier and drop everything since that index
         idx = pattern.rfind("{")
