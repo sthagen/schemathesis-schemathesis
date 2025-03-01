@@ -78,25 +78,3 @@ Schemathesis differs from other API testing tools in several key ways:
 - **Schema-first workflow**: While tools like Postman or Insomnia focus on manual request creation, Schemathesis derives all test cases directly from your API specification.
 
 Compared to tools like Dredd, Schemathesis focuses more on finding unexpected edge cases through property-based testing rather than verifying documented examples.
-
-## Can I customize what data Schemathesis generates?
-
-Yes, Schemathesis offers several ways to customize data generation:
-
-- **CLI options**: Use flags like `--generation-codec` or `--generation-allow-x00` to control specific aspects of data generation.
-
-- **Hook system**: For Python users, hooks allow you to modify generated values before they're sent to the API.
-
-- **Custom strategies**: Advanced Python users can define custom data generation strategies for specific parameters.
-
-If you need to exclude problematic inputs that cause early failures, hooks are particularly useful as they let you replace or modify generated values while still maintaining good test coverage.
-
-## How can I use authentication with Schemathesis?
-
-Schemathesis supports various authentication methods:
-
-- **Basic authentication**: Use the `--auth username:password` CLI option for simple cases.
-
-- **Header-based auth**: Use `--header "Authorization: Bearer TOKEN"` for token-based authentication.
-
-- **Auth extensions**: Schemathesis supports third-party authentication extensions for OAuth, API keys, and other auth methods via Python API
