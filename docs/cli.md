@@ -13,11 +13,7 @@ $ st run https://example.schemathesis.io/openapi.json
 This command:
 
 - Loads the API schema from the specified URL.
-- Generates diverse test cases across multiple test phases:
-    - **examples:** Using schema-defined examples.
-    - **coverage:** Using deterministic edge cases and boundary values.
-    - **fuzzing:** Using randomly generated values.
-    - **stateful:** Testing API operation sequences.
+- Generates diverse test cases across multiple [test phases](#test-phases).
 - Executes the test cases and runs a suite of checks against the API responses.
 - Automatically minimizes any failing test case to help pinpoint the underlying issue.
 
@@ -27,13 +23,11 @@ Example output:
 Schemathesis dev
 ━━━━━━━━━━━━━━━━
 
-
  ✅  Loaded specification from https://schemathesis.io/openapi.json (in 0.32s)
 
      Base URL:         http://127.0.0.1/api
      Specification:    Open API 3.0.2
      Operations:       1 selected / 1 total
-
 
  ✅  API capabilities:
 
@@ -182,7 +176,7 @@ You can combine multiple filters to create precise test scopes:
 $ st run --include-method POST --include-method PUT --exclude-tag admin ...
 ```
 
-This example tests only POST and PUT operations that don't have the "deprecated" tag.
+This example tests only POST and PUT operations that don't have the "admin" tag.
 
 ### Filtering by Schema Properties
 
@@ -215,6 +209,307 @@ $ st run --exclude-deprecated ...
 !!! important "GraphQL Support"
 
     For GraphQL schemas, Schemathesis only supports filtration by the `name` property.
+
+## Authentication and Headers
+
+Schemathesis supports various authentication methods: token-based headers, HTTP Basic Auth, and advanced multi-step flows. Authentication settings apply to all API requests made during testing.
+
+### Token-based Authentication
+
+#### API Keys
+
+To provide an API key via header:
+
+```console
+$ st run openapi.yaml --header "X-API-Key: your-api-key-here"
+```
+
+!!! tip ""
+
+    Store tokens in environment variables to avoid exposing them in command history:
+
+    ```console
+    $ st run openapi.yaml --header "X-API-Key: ${API_KEY}"
+    ```
+
+#### Bearer Tokens
+
+For Bearer token authentication:
+
+```console
+$ st run openapi.yaml --header "Authorization: Bearer your-token-here"
+```
+
+!!! note ""
+
+    Specify multiple headers by repeating the `--header` option:
+
+    ```console
+    $ st run openapi.yaml \
+      --header "Authorization: Bearer ${TOKEN}" \
+      --header "X-Tenant-ID: ${TENANT_ID}"
+    ```
+
+### Basic Authentication
+
+For HTTP Basic Auth, use `--auth`:
+
+```console
+$ st run openapi.yaml --auth username:password
+```
+
+Schemathesis automatically encodes credentials in the `Authorization` header.
+
+### Using Configuration Files
+
+Configuration files allow you to set default authentication or override it for specific API operations. This flexible approach supports all authentication types, including OpenAPI security schemes, which are automatically applied when required by the API.
+
+By default, Schemathesis automatically loads a `schemathesis.toml` file from the current directory or project root. To use a custom configuration file, specify its path with the `--config` option:
+
+```console
+$ st run openapi.yaml --config config.toml
+```
+
+For more details, see the [Authentication Configuration Reference](./reference/configuration.md#authentication) section. For example:
+
+```toml
+[auth]
+bearer = "${TOKEN}"
+
+[auth.openapi]
+ApiKeyAuth = { value = "${API_KEY}" }
+```
+
+### Advanced Authentication
+
+For complex or multi-step authentication flows that require custom logic, please refer to the [Extensions Guide](./extending.md).
+
+
+!!! tip "Third-Party Authentication"
+
+    Python extensions allow you to use third-party libraries for specialized protocols. For example, you can use `requests_ntlm` for NTLM authentication
+
+## Test Phases
+
+Schemathesis divides testing into distinct phases—each designed to detect specific API issues.
+
+### Available Phases
+
+Schemathesis supports four test phases:
+
+- **Examples**: Uses schema-defined examples for quick verification.  
+- **Coverage**: Systematically tests boundary values, constraints, and edge cases.  
+- **Fuzzing**: Uses randomized data to uncover unexpected edge cases.  
+- **Stateful**: Tests sequences of API calls to assess stateful behavior.
+
+By default, all phases are enabled.
+
+!!! warning ""
+
+    Note: The stateful phase can significantly increase test duration.
+
+### Selecting Phases
+
+Use the `--phases` option with a comma-separated list to specify which phases to run:
+
+```console
+$ st run openapi.yaml --phases examples,fuzzing
+```
+
+To run a single phase:
+
+```console
+$ st run openapi.yaml --phases coverage
+```
+
+!!! tip ""
+
+    For more information about test phases, including how they work and when to use them, see the [Test Phases](./phases.md) page.
+
+## Data Generation
+
+Schemathesis generates test data for API operations based on your schema. These options let you control how test data is created.
+
+### Test Data Modes
+
+The `--mode` option determines whether Schemathesis generates valid data, invalid data, or both:
+
+```console
+$ st run openapi.yaml --mode positive
+```
+
+Available modes:
+
+- `positive`: Generate only valid data that should be accepted by the API
+- `negative`: Generate data that violates schema constraints to test error handling (slower generation)
+- `all`: Generate both valid and invalid data (default)
+
+!!! example ""
+
+    In negative mode, if your schema has a constraint like `minimum: 1`, Schemathesis might generate values like `0` or `-5` to test how your API handles invalid inputs.
+
+!!! tip ""
+
+    Use `--mode positive` during initial API development to focus on core functionality before testing error handling.
+
+### Number of Examples
+
+The `--max-examples` option controls the maximum number of test cases:
+
+```console
+$ st run openapi.yaml --max-examples 50
+```
+
+By default, Schemathesis generates up to 100 test cases per operation.
+
+!!! note ""
+
+    - In unit testing phases (examples, coverage, fuzzing): Limits the number of test cases per operation
+    - In stateful testing: Controls the number of API calls in a single sequence
+    - Testing may finish earlier if Schemathesis finds a failure or exhausts all possible inputs
+
+!!! example ""
+
+    For a parameter with constraints like `minimum: 1, maximum: 10`, Schemathesis might generate fewer than your requested examples if it exhausts all meaningful test cases.
+
+
+!!! tip ""
+
+    - Lower values (10-50) provide faster feedback during development
+    - Higher values (100+) find more edge cases but take longer to execute
+    - Use `--continue-on-failure` to test all examples even after finding failures
+
+### Reproducibility
+
+Use the `--seed` option to make test data generation reproducible in the same environment:
+
+```console
+$ st run openapi.yaml --seed 42
+```
+
+With a fixed seed, Schemathesis generates the same sequence of test data within the same environment, which helps:
+
+- Reproduce reported issues: "Test fails with seed 12345"
+- Create predictable test runs in CI/CD environments
+
+!!! warning ""
+
+    Using the same seed only guarantees identical test data when other factors remain constant - including schema definition, API behavior, Schemathesis version, and Python version.
+
+!!! tip ""
+
+    For additional data generation options, see the [Data Generation Guide](./data-generation.md).
+
+## Checks
+
+Checks are validations Schemathesis performs on API responses to verify correct behavior according to specifications.
+
+!!! note ""
+
+    All checks are enabled by default. Customize them to focus on schema compliance, server crashes or stateful issues as needed.
+
+### Selecting Checks
+
+Customize the test run by specifying the checks to include using the `--checks` option:
+
+```console
+$ st run openapi.yaml --checks not_a_server_error,response_schema_conformance
+```
+
+Disable specific checks while retaining others by using the `--exclude-checks` option:
+
+```console
+$ st run openapi.yaml --exclude-checks negative_data_rejection
+```
+
+!!! tip ""
+
+    Use `--checks` to run only the listed checks, or `--exclude-checks` to run all checks except the ones you specify.
+
+### Response Time Validation
+
+Use the `--max-response-time` option to ensure API responses are received within a specified time frame:
+
+```console
+$ st run openapi.yaml --max-response-time 0.5
+```
+In this example, tests will fail for any API response that takes longer than 500 milliseconds, helping you identify slow endpoints.
+
+### Common Check Combinations
+
+Different testing goals require different check combinations. Here's a common scenario:
+
+#### Schema Compliance Testing
+
+For schema compliance testing, run only the checks that validate response status codes, content types, and schema structures:
+
+```console
+$ st run openapi.yaml --checks \
+    status_code_conformance,content_type_conformance,response_schema_conformance
+```
+
+This combination ensures responses use the expected status codes, content types, and schema structures without testing additional behavior like authentication bypass.
+
+!!! tip ""
+
+    For more information about checks, including what they validate and when to use them, see the [Checks Reference](./reference/checks.md).
+
+## Reporting Test Results
+
+Schemathesis can generate structured reports of test results for integration with CI systems, sharing findings with your team, and analyzing API behavior.
+
+### Report Types and Use Cases
+
+Schemathesis supports three report formats, each serving different purposes:
+
+- **JUnit XML**: Integration with CI systems like Jenkins or GitLab CI. Provides structured test results that can be visualized in test reporting dashboards.
+
+- **VCR Cassettes**: Debugging API issues by preserving complete request and response details. Includes metadata like test case IDs and check results in YAML format.
+
+- **HAR Files**: Analyzing HTTP traffic with browser developer tools or third-party applications. Provides a standard format compatible with HTTP analyzers.
+
+### Generating and Storing Reports
+
+By default, Schemathesis doesn't generate any reports. Use the `--report` option with a comma-separated list of formats:
+
+```console
+$ st run openapi.yaml --report junit,vcr
+```
+
+Reports are stored in the `schemathesis-report` directory by default. You can change this with `--report-dir`:
+
+```console
+$ st run openapi.yaml --report junit --report-dir ./test-results
+```
+
+!!! note ""
+
+    Files in the report directory are overwritten on each run. Use unique directories or filenames for tests you want to preserve.
+
+For specific report types, you can customize the output path:
+
+```console
+$ st run openapi.yaml \
+  --report junit \
+  --report-junit-path ./jenkins/schemathesis-results.xml
+```
+
+Similar options exist for other formats:
+
+```console
+$ st run openapi.yaml \
+  --report vcr \
+  --report-vcr-path ./debug/api-responses.yaml
+
+$ st run openapi.yaml \
+  --report har \
+  --report-har-path ./analysis/http-archive.har
+```
+
+!!! tip ""
+
+    For detailed information about report structures and advanced usage, see the [Reporting Guide](./reporting.md).
+
 
 ## :whale: Docker Usage
 
