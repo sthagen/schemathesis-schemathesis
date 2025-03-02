@@ -1,15 +1,16 @@
 # Schemathesis
 
-A command-line tool that tests APIs using their OpenAPI/GraphQL schema.
+Schemathesis automatically generates and runs API tests from your OpenAPI or GraphQL schema to find bugs and spec violations.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/schemathesis/schemathesis/master/img/demo.gif" alt="Schemathesis automatically finding a server crash"/>
+  <img src="https://raw.githubusercontent.com/schemathesis/schemathesis/master/img/demo.gif" alt="Schemathesis automatically finding a server error"/>
   <br>
-  <i>Finding specification violations and server errors automatically</i>
+  <i>Automatically finding specification violations and server errors</i>
 </p>
 
 ## Why Schemathesis?
 
+- 🔬 **Research-backed testing**: Validated in [academic research](https://ieeexplore.ieee.org/document/9793781) and recognized in an [ACM survey](https://dl.acm.org/doi/10.1145/3617175) as a state-of-the-art API testing tool
 - 🔍 **Schema-Based Generation** - Creates test cases directly from your API documentation
 - 🛡️ **Zero Configuration** - Works immediately with any valid OpenAPI or GraphQL schema
 - 🔄 **Advanced Testing Techniques** - Employs stateful testing, boundary analysis, and fuzzing
@@ -24,87 +25,65 @@ A command-line tool that tests APIs using their OpenAPI/GraphQL schema.
   <cite>— Luděk Nový, JetBrains</cite>
 </div>
 
-## Installation & Quick Start
+## Try It
 
 ```console
-# Try without installing (quickest way to start)
+# Quickest way to start:
 $ uvx schemathesis run http://example.schemathesis.io/openapi.json
 ```
 
-For regular use, install with `uv pip install`:
+!!! tip ""
 
-```console
-$ uv pip install schemathesis
+    For installing Schemathesis, we recommend using [uv](https://docs.astral.sh/uv/), a fast Python package installer and environment manager.
 
-# Also available via Docker
-$ docker run schemathesis/schemathesis:stable \
-     run http://example.schemathesis.io/openapi.json
-```
+See [Getting Started](getting-started.md) for installation options and your first test run.
 
-Works with partially valid schemas - perfect for APIs under development.
+## Documentation
 
-## Basic Usage
-
-After installation, Schemathesis operates with minimal configuration:
-
-```console
-# Run comprehensive testing with default settings
-$ schemathesis run http://example.schemathesis.io/openapi.json
-
-# Verify only the examples in your schema
-$ schemathesis run http://example.schemathesis.io/openapi.json --phases=examples
-
-# Run intensive testing with many examples
-$ schemathesis run http://example.schemathesis.io/openapi.json --max-examples=10
-```
-
-## Types of Issues Detected
-
-Schemathesis identifies problems in three main categories:
-
-#### API Contract Violations
-
-- Responses not matching documented schemas
-- Undocumented status codes
-- Missing or incorrect content types
-
-#### Implementation Flaws
-
-- Server errors (5xx responses)
-- Data validation issues (accepting invalid data or rejecting valid data)
-- Authentication bypasses
-
-#### Stateful Behavior Issues
-
-- Resources accessible after deletion
-- Resources unavailable after creation
-
-## CI/CD Integration
-
-Add automated API testing to your workflow:
-
-```yaml
-# GitHub Actions example
-api-tests:
-  runs-on: ubuntu-latest
-  steps:
-    - uses: schemathesis/action@v1
-      with:
-        schema: "https://example.schemathesis.io/openapi.json"
-```
+<div class="grid">
+  <div class="card">
+    <h3><a href="getting-started">Getting Started</a></h3>
+    <p>Install Schemathesis and run your first API test in minutes</p>
+  </div>
+  <div class="card">
+    <h3><a href="core-concepts">Core Concepts</a></h3>
+    <p>Understand how Schemathesis generates and executes tests</p>
+  </div>
+  <div class="card">
+    <h3><a href="using/cli">CLI Guide</a></h3>
+    <p>Learn how to use Schemathesis from the command line</p>
+  </div>
+  <div class="card">
+    <h3><a href="using/python-integration">Python Integration</a></h3>
+    <p>Embed API testing directly in your Python test suites</p>
+  </div>
+</div>
 
 ## Schema Support
 
-- OpenAPI 2.0, 3.0, and 3.1
-- GraphQL (2018 spec)
+- **OpenAPI**: 2.0 (Swagger), 3.0, and 3.1
+- **GraphQL**: 2018 specification
 
 ## Learn More
 
-- [How Schemathesis Works](./how-it-works.md) - Understanding the testing approach and design principles
-- [Command-Line Interface](./cli.md) - Explore different testing scenarios and CLI capabilities
-- [Python & pytest Integration](./python-integration.md) - Using Schemathesis in Python test suites
-- [Configuration](./configuration.md) - Customizing test execution for your API
-- [Continuous Integration](./ci.md) - Using Schemathesis within CI/CD pipelines
-- [Extending Schemathesis](./extending.md) - Writing custom hooks and extensions
-- [Troubleshooting](./troubleshooting.md) - TODO
-- [FAQ](./faq.md) - Common questions and solutions
+* **[Using Schemathesis](using/cli.md)** — Practical guides for running tests with different interfaces
+    * [Command-Line Interface](using/cli.md)
+    * [Python Integration](using/python-integration.md)
+    * [Continuous Integration](ci/overview.md)
+    * [Configuration](using/configuration.md)
+
+* **[Extending Schemathesis](extending/overview.md)** — Customize and enhance testing capabilities
+    * [Custom Checks](extending/checks.md)
+    * [Data Generation](extending/data-generation.md)
+    * [Authentication](extending/auth.md)
+    * [Hooks](extending/hooks.md)
+
+* **[Reference](reference/configuration.md)** — Comprehensive documentation of all options and settings
+    * [Configuration Options](reference/configuration.md)
+    * [CLI Options](reference/cli.md)
+    * [Checks](reference/checks.md)
+    * [Reporting](reference/reporting.md)
+
+* **[Resources](resources.md)** — Community articles, videos, and tutorials
+
+* **[Troubleshooting](troubleshooting.md)** — Solve common issues
