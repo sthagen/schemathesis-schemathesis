@@ -1,11 +1,9 @@
 # Configuration Options
 
-This reference details all the configuration options available in `schemathesis.toml`. The settings are organized into two main categories:
+This reference covers all the configuration options available in `schemathesis.toml`. The settings are organized into two main categories:
 
 - **Global**: These control CLI behavior, output formatting, and overall test execution. They are defined at the top level and affect the CLI invocation.
-- **Per-Project**: These let you customize configurations for individual API projects. If project-level settings are placed at the top level (without a `[project.<name>]` namespace), they are applied to the "default" project.
-
-This structure simplifies single-project setups by allowing you to specify project-level settings directly at the top level while still providing the flexibility to override them for specific projects.
+- **Per-Project**: These let you customize configurations for individual API projects. If project-level settings are placed at the top level (without a `[project.<name>]` namespace), they are used as defaults for any tested project.
 
 ## Configuration Resolution
 
@@ -15,10 +13,8 @@ Schemathesis applies settings in the following hierarchy (from highest to lowest
 2. Operation-specific phase settings
 3. Global phase settings (e.g., `[phases.fuzzing]`)
 4. Operation-level settings (e.g., `[[operations]]`)
-5. Project-level settings (e.g., `[projects.payments]`)
-6. Global settings (top level)
-
-This hierarchy allows you to set sensible defaults at higher levels while overriding specific settings as needed.
+5. Project-level settings (e.g., `[[projects]]`)
+6. Global settings
 
 ## Environment Variable Substitution
 
@@ -40,14 +36,13 @@ Schemathesis allows applying custom configuration to specific API operations in 
 # By exact path
 include-path = "/users"
 # By HTTP method
-include-method = "POST"
+exclude-method = "POST"
 # By full operation name
-include-name = "POST /users/"
+# include-name = "POST /users/"
 # By Open API tag
-include-tag = "admin"
+# include-tag = "admin"
 # By Open API operation ID
-include-operation-id = "POST"
-# More configuration options follow ...
+# include-operation-id = "delete-user"
 ```
 
 ## Parameter Overrides
@@ -89,7 +84,7 @@ parameters = { "path.user_id" = 42, "query.user_id" = 100 }
 
 !!! note ""
 
-    **Type**: `Array of strings`  
+    **Type**: `Array[String]`  
     **Default**: `[]`  
 
     Specifies a list of health checks to disable during test execution. Possible values include: `data_too_large`, `filter_too_much`, `too_slow`, `large_base_example`, and `all`.
@@ -216,7 +211,7 @@ These settings can only be applied at the project level.
 
     ```toml
     # Optionally under a named project
-    # [project.payments]
+    # [[projects]]
     base-url = "https://api.example.com"
     ```
 
@@ -234,21 +229,20 @@ These settings can only be applied at the project level.
     hooks = "myproject.tests.hooks"
     
     # Or project-specific hooks
-    [projects.payments]
-    hooks = "myproject.payments.hooks"
+    # [[projects]]
+    # hooks = "myproject.payments.hooks"
     ```
 
 #### `workers`
 
 !!! note ""
 
-    **Type:** `Integer or "auto"`  
-    **Default:** `1`  
+    **Type:** `Integer`  
+    **Default:** `Number of available CPUs`  
 
     Specifies the number of concurrent workers for running unit test phases.
 
     ```toml
-    workers = "auto"  # Auto-adjust based on available cores
     workers = 4       # Use exactly 4 workers
     ```
 
@@ -304,18 +298,35 @@ These settings can only be applied at the project level.
     max-response-time = 2.0
     ```
 
+### Phases
+
 #### `phases.<phase>.enabled`
 
 !!! note "" 
 
     **Type**: `Boolean`  
-    **Default**: `false`  
+    **Default**: `true`  
 
     Enables a testing phase. Replace `<phase>` with one of: `examples`, `coverage`, `fuzzing`, or `stateful`.
 
     ```toml
     [phases.coverage]
-    enabled = true
+    enabled = false
+    ```
+
+#### `phases.coverage.unexpected-methods`
+
+!!! note "" 
+
+    **Type**: `Array[String]`  
+    **Default**: `[]`  
+
+    Lists the HTTP methods to use when generating test cases with methods not specified in the API during the **coverage** phase.  
+    Schemathesis will limit negative testing of unexpected methods to those in the array; if omitted, all HTTP methods not specified in the spec are applied.
+
+    ```toml
+    [phases.coverage]
+    unexpected-methods = ["PATCH"]
     ```
 
 ### Authentication
@@ -341,11 +352,11 @@ These settings can only be applied at the project level.
     **Type:** `String`  
     **Default:** `null`  
 
-    Specifies a bearer token for authentication. This token can alternatively be provided via CLI headers.
+    Specifies a bearer token for authentication.
 
     ```toml
     [auth]
-    bearer = "${TOKEN}"
+    bearer = "${API_TOKEN}"
     ```
 
 #### `auth.openapi`
@@ -355,7 +366,13 @@ These settings can only be applied at the project level.
     **Type:** `Object`  
     **Default:** `null`  
 
-    Defines authentication settings for OpenAPI security schemes. Each key in this object should match a security scheme defined in your OpenAPI specification. Schemathesis resolves authentication in order: CLI options, operation headers, OpenAPI-specific authentication, and then generic authentication.
+    Defines authentication settings for OpenAPI security schemes. Each key in this object should match a security scheme defined in your OpenAPI specification. 
+
+    Schemathesis resolves authentication in order: 
+
+      - CLI options
+      - Operation-specific auth
+      - Global
 
     ```toml
     [auth.openapi]
@@ -363,17 +380,13 @@ These settings can only be applied at the project level.
     BasicAuth = { username = "${USERNAME}", password = "${PASSWORD}" }
 
     # Bearer token authentication
-    BearerAuth = { token = "${TOKEN}" }
+    BearerAuth = { token = "${API_TOKEN}" }
 
     # API Key authentication
     ApiKeyAuth = { value = "${API_KEY}" }
 
     # OAuth2 authentication
-    OAuth2 = { 
-      client_id = "${CLIENT_ID}", 
-      client_secret = "${CLIENT_SECRET}",
-      scopes = ["read", "write"]
-    }
+    OAuth2 = { client_id = "${CLIENT_ID}", client_secret = "${CLIENT_SECRET}" }
     ```
 
 ### Checks
@@ -385,7 +398,18 @@ These settings can only be applied at the project level.
     **Type:** `Boolean`  
     **Default:** `true`  
 
-    Enables or disables the specified check. Replace `<check>` with the name of the check (for example, `not_a_server_error`, `status_code_conformance`, `content_type_conformance`, `response_schema_conformance`, `positive_data_acceptance`, `negative_data_rejection`, `use_after_free`, `ensure_resource_availability`, `missing_required_header`, or `ignored_auth`).
+    Enables or disables the specified check. Replace `<check>` with one of the following:
+
+      - `not_a_server_error`
+      - `status_code_conformance`
+      - `content_type_conformance`
+      - `response_schema_conformance`
+      - `positive_data_acceptance`
+      - `negative_data_rejection`
+      - `use_after_free`
+      - `ensure_resource_availability`
+      - `missing_required_header`
+      - `ignored_auth`
 
     ```toml
     [checks]
@@ -396,17 +420,17 @@ These settings can only be applied at the project level.
 
 !!! note ""
 
-    **Type:** `Array of integers`  
+    **Type:** `Array[Integer]`  
     **Default:** `[200]`  
 
     Defines the HTTP status codes expected from the API for specific checks. Different checks may interpret this setting differently:
 
-        - For `positive_data_acceptance`: Defines status codes that indicate the API has accepted valid data
-        - For `negative_data_rejection`: Defines status codes that indicate the API has properly rejected invalid data
-        - For `missing_required_header`: Defines status codes that indicate the API has properly rejected a call without required header
-        - For `not_a_server_error`: Defines status codes that are not considered server errors within the 5xx range
+      - For `positive_data_acceptance`: Defines status codes that indicate the API has accepted valid data
+      - For `negative_data_rejection`: Defines status codes that indicate the API has properly rejected invalid data
+      - For `missing_required_header`: Defines status codes that indicate the API has properly rejected a call without required header
+      - For `not_a_server_error`: Defines status codes that are not considered server errors within the 5xx range
 
-        This allows you to customize validation for APIs that use non-standard success or error codes.
+    This allows you to customize validation for APIs that use non-standard success or error codes.
 
     ```toml
     [checks]
@@ -426,12 +450,16 @@ The following settings control how Schemathesis makes network requests to the AP
 
     Add custom HTTP headers to all API requests. Headers are specified as key-value pairs.
 
-    ```toml
-    # Add a single header
-    header = { "X-API-Key" = "${API_KEY}" }
+    Add a single header:
 
-    # Add multiple headers
-    header = { "X-API-Key" = "${API_KEY}", "Accept-Language" = "en-US" }
+    ```toml
+    headers = { "X-API-Key" = "${API_KEY}" }
+    ```
+
+    Add multiple headers:
+
+    ```toml
+    headers = { "X-API-Key" = "${API_KEY}", "Accept-Language" = "en-US" }
     ```
 
 #### `proxy`
@@ -443,12 +471,16 @@ The following settings control how Schemathesis makes network requests to the AP
 
     Set the proxy URL for all network requests. Supports HTTP and HTTPS proxies.
 
-    ```toml
-    # HTTP proxy
-    proxy = "http://localhost:8080"
+    HTTP proxy:
 
-    # HTTPS proxy with authentication
-    proxy = "https://user:password@proxy.example.com:8443"
+    ```toml
+    proxy = "http://localhost:8080"
+    ```
+
+    HTTPS proxy with authentication:
+
+    ```toml
+    proxy = "https://${USERNAME}:${PASSWORD}@proxy.example.com:8443"
     ```
 
 #### `tls-verify`
@@ -460,11 +492,15 @@ The following settings control how Schemathesis makes network requests to the AP
 
     Control TLS certificate verification. Can be a boolean or a path to a CA bundle file.
 
-    ```toml
-    # Disable TLS verification
-    tls-verify = false
+    Disable TLS verification:
 
-    # Use a custom CA bundle
+    ```toml
+    tls-verify = false
+    ```
+
+    Use a custom CA bundle:
+
+    ```toml
     tls-verify = "/path/to/ca-bundle.pem"
     ```
 
@@ -477,14 +513,21 @@ The following settings control how Schemathesis makes network requests to the AP
 
     Specify a rate limit for test requests in '<limit>/<duration>' format. Supports 's' (seconds), 'm' (minutes), and 'h' (hours) as duration units.
 
+    100 requests per minute:
+
     ```toml
-    # 100 requests per minute
     rate-limit = "100/m"
+    ```
 
-    # 5 requests per second
+    5 requests per second:
+
+    ```toml
     rate-limit = "5/s"
+    ```
 
-    # 1000 requests per hour
+    1000 requests per hour:
+
+    ```toml
     rate-limit = "1000/h"
     ```
 
@@ -497,11 +540,15 @@ The following settings control how Schemathesis makes network requests to the AP
 
     Set a timeout limit in seconds for each network request during tests. Must be a positive number.
 
-    ```toml
-    # 5-second timeout
-    request-timeout = 5.0
+    5 second timeout:
 
-    # 500ms timeout
+    ```toml
+    request-timeout = 5.0
+    ```
+
+    500 millisecond timeout:
+
+    ```toml
     request-timeout = 0.5
     ```
 
@@ -548,13 +595,14 @@ The following settings control how Schemathesis generates test data for your API
     Test data generation mode. Controls whether Schemathesis generates valid data, invalid data, or both.
     
     Possible values:
+
     - `"positive"`: Generate only valid data according to the schema
     - `"negative"`: Generate only invalid data to test error handling
     - `"all"`: Generate both valid and invalid data
     
     ```toml
     [generation]
-    mode = "positive"
+    mode = "negative"
     ```
 
 #### `generation.max-examples`
@@ -574,7 +622,7 @@ The following settings control how Schemathesis generates test data for your API
 
     ```toml
     [generation]
-    max-examples = 100
+    max-examples = 200
     ```
 
 #### `generation.seed`
@@ -651,7 +699,7 @@ The following settings control how Schemathesis generates test data for your API
 
 !!! note ""
 
-    **Type:** `String`  
+    **Type:** `String` or `Array[String]`  
     **Default:** `null`  
     
     Guide input generation to values more likely to expose bugs via targeted property-based testing.
@@ -685,7 +733,7 @@ The following settings control how Schemathesis generates test data for your API
     **Type:** `Boolean`  
     **Default:** `true`  
 
-    Controls whether to use `null` values for optional arguments in GraphQL queries. Applicable only for GraphQL API testing.
+    Controls whether to use `\x00` bytes in generated GraphQL queries. Applicable only for GraphQL API testing.
 
     ```toml
     [generation]
@@ -709,9 +757,13 @@ The following settings control how Schemathesis generates test data for your API
     ```toml
     [generation]
     database = ":memory:"
+    ```
 
-    # Or for persistent storage
-    database = "./schemathesis_examples.db"
+    Or for persistent storage:
+
+    ```toml
+    [generation]
+    database = "./.schemathesis/examples/"
     ```
 
 #### `generation.unique-inputs`
