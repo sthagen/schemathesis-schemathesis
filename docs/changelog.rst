@@ -1,12 +1,19 @@
 Changelog
 =========
 
-:version:`Unreleased <v4.0.0-alpha.5...HEAD>` - TBD
+:version:`Unreleased <v4.0.0-alpha.6...HEAD>` - TBD
 ---------------------------------------------------
+
+.. _v4.0.0-alpha.6:
+
+:version:`4.0.0-alpha.6 <v4.0.0-alpha.5...v4.0.0-alpha.6>` - 2025-03-20
+-----------------------------------------------------------------------
 
 **Fixed**
 
 - Incorrect quantifiers merging for patterns involving single-element set of characters like ``[+]``.
+- Internal error in the coverage phase due to incorrect example value extraction.
+- If the generated query parameter value is an empty object, send it as an empty string.
 
 .. _v4.0.0-alpha.5:
 
