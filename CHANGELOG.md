@@ -1,6 +1,13 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.0.0-alpha.7...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.0.0-alpha.8...HEAD) - TBD
+
+## [4.0.0-alpha.8](https://github.com/schemathesis/schemathesis/compare/v4.0.0-alpha.7...v4.0.0-alpha.8) - 2025-04-05
+
+### :rocket: Added
+
+- Additional `base_url` validation for `BaseSchema.configure` method.
+- Temporary `SCHEMATHESIS_DISABLE_COVERAGE` environment variable so the coverage phase can be disabled for the pytest integration.
 
 ### :wrench: Changed
 
@@ -14,6 +21,9 @@
 - Correctly handle second CTRL-C when waiting for worker threads.
 - Generate negative values for `minItems` & `maxItems` during the coverage phase.
 - Use `default` value as valid input during the coverage phase.
+- Unknown `multipart/form-data` fields not added to the final test case payload.
+- Generate a non-empty string for negative testing of `type: string` enums during the coverage phase.
+- Export `HookContext` & `BaseSchema` as a part of the public Python API.
 
 ## [4.0.0-alpha.7](https://github.com/schemathesis/schemathesis/compare/v4.0.0-alpha.6...v4.0.0-alpha.7) - 2025-03-21
 
