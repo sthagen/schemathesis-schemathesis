@@ -10,6 +10,10 @@
 
 - Do not mutate `pattern` keywords in response schema validation. [#2749](https://github.com/schemathesis/schemathesis/issues/2749)
 - Support for async schema fixtures in `schemathesis.pytest.from_fixture`.
+- Generate empty header values during the coverage phase.
+- Correctly handle second CTRL-C when waiting for worker threads.
+- Generate negative values for `minItems` & `maxItems` during the coverage phase.
+- Use `default` value as valid input during the coverage phase.
 
 ## [4.0.0-alpha.7](https://github.com/schemathesis/schemathesis/compare/v4.0.0-alpha.6...v4.0.0-alpha.7) - 2025-03-21
 

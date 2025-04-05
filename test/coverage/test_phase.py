@@ -1088,6 +1088,31 @@ def test_incorrect_headers(ctx):
     )
 
 
+def test_use_default(ctx):
+    schema = ctx.openapi.build_schema(
+        {
+            "/foo": {
+                "post": {
+                    "parameters": [
+                        {
+                            "name": "Key",
+                            "in": "query",
+                            "required": True,
+                            "schema": {"type": "string", "default": "DEFAULT-VALUE"},
+                        },
+                    ],
+                    "responses": {"200": {"description": "OK"}},
+                }
+            }
+        }
+    )
+    assert_coverage(
+        schema,
+        [GenerationMode.POSITIVE],
+        [{"query": {"Key": "DEFAULT-VALUE"}}],
+    )
+
+
 def test_optional_parameter_without_type(ctx):
     schema = ctx.openapi.build_schema(
         {
@@ -1225,6 +1250,125 @@ def test_incorrect_headers_with_enum(ctx):
             {
                 "headers": {"X-API-Key-1": "0"},
             },
+        ],
+    )
+
+
+def test_generate_empty_headers_too(ctx):
+    schema = ctx.openapi.build_schema(
+        {
+            "/foo": {
+                "post": {
+                    "parameters": [
+                        {
+                            "name": "X-API-Key-1",
+                            "in": "header",
+                            "required": True,
+                            "schema": {
+                                "maxLength": 40,
+                                "pattern": "^[\\w\\W]+$",
+                                "type": "string",
+                            },
+                        },
+                    ],
+                    "responses": {"200": {"description": "OK"}},
+                }
+            }
+        }
+    )
+    assert_coverage(
+        schema,
+        [GenerationMode.NEGATIVE],
+        [
+            {"headers": {}},
+            {"headers": {"X-API-Key-1": "{}"}},
+            {"headers": {"X-API-Key-1": "null,null"}},
+            {"headers": {"X-API-Key-1": "null"}},
+            {"headers": {"X-API-Key-1": "false"}},
+            {"headers": {"X-API-Key-1": "0"}},
+            {"headers": {"X-API-Key-1": ""}},
+        ],
+    )
+
+
+def test_more_than_max_items(ctx):
+    schema = ctx.openapi.build_schema(
+        {
+            "/foo": {
+                "post": {
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {"type": "boolean"},
+                                    "maxItems": 3,
+                                },
+                            }
+                        },
+                    },
+                    "responses": {"default": {"description": "OK"}},
+                }
+            }
+        }
+    )
+    assert_coverage(
+        schema,
+        [GenerationMode.NEGATIVE],
+        [
+            {"body": [False, False, False, False]},
+            {"body": [{}]},
+            {"body": [[None, None]]},
+            {"body": [""]},
+            {"body": [None]},
+            {"body": [0]},
+            {"body": {}},
+            {"body": ""},
+            {},
+            {"body": False},
+            {"body": 0},
+        ],
+    )
+
+
+def test_less_than_min_items(ctx):
+    schema = ctx.openapi.build_schema(
+        {
+            "/foo": {
+                "post": {
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {"type": "boolean"},
+                                    "minItems": 3,
+                                },
+                            }
+                        },
+                    },
+                    "responses": {"default": {"description": "OK"}},
+                }
+            }
+        }
+    )
+    assert_coverage(
+        schema,
+        [GenerationMode.NEGATIVE],
+        [
+            {"body": [False, False]},
+            {"body": [{}]},
+            {"body": [[None, None]]},
+            {"body": [""]},
+            {"body": [None]},
+            {"body": [0]},
+            {"body": {}},
+            {"body": ""},
+            {},
+            {"body": False},
+            {"body": 0},
         ],
     )
 
