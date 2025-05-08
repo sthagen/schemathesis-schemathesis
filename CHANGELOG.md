@@ -1,13 +1,31 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.0.0-alpha.8...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.0.0-alpha.10...HEAD) - TBD
 
+## [4.0.0-alpha.10](https://github.com/schemathesis/schemathesis/compare/v4.0.0-alpha.9...v4.0.0-alpha.10) - 2025-05-07
+
+### :bug: Fixed
+
+- Generate negative test cases for large nested arrays during the coverage phase.
+- Generate strings larger than 10000 characters during the coverage phase.
+- Internal error on building a JUnit report if the same failures appear multiple times across multiple test phases. [#2814](https://github.com/schemathesis/schemathesis/issues/2814)
+
+## [4.0.0-alpha.9](https://github.com/schemathesis/schemathesis/compare/v4.0.0-alpha.8...v4.0.0-alpha.9) - 2025-05-06
+
+### :wrench: Changed
+
+- Support basic canonicalisation of regex patterns. For example, `[\\W\\w]` could be replaced with `.` in some scenarios.
 
 ### :bug: Fixed
 
 - Missing reference resolution scope when serializing `multipart` payloads. [#2776](https://github.com/schemathesis/schemathesis/issues/2776)
 - Compatibility with hypothesis >= 6.131.4. [#2797](https://github.com/schemathesis/schemathesis/issues/2797)
 - Cover more nested `enum` values during the coverage phase.
+- Avoid extremely slow generation of large strings combined with `patterns` during the coverage phase.
+- Generate objects during the coverage phase even if `"type": "object"` is not present.
+- Generate empty strings in more cases during the coverage phase.
+- Generate nested `items` during the coverage phase.
+- Generate large arrays during the coverage phase.
 
 ## [4.0.0-alpha.8](https://github.com/schemathesis/schemathesis/compare/v4.0.0-alpha.7...v4.0.0-alpha.8) - 2025-04-05
 

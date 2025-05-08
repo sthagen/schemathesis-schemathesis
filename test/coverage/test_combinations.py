@@ -270,6 +270,16 @@ def test_positive_number(ctx, schema, multiple_of, values, with_multiple_of):
         ),
         (
             {
+                # No `type`
+                "properties": {"foo": {"type": "integer", "example": 42}},
+                "required": ["foo"],
+            },
+            [
+                {"foo": 42},
+            ],
+        ),
+        (
+            {
                 "type": "object",
                 "properties": {"foo": {"type": "integer", "default": 42}},
                 "required": ["foo"],
@@ -316,7 +326,37 @@ def test_positive_number(ctx, schema, multiple_of, values, with_multiple_of):
                     }
                 },
             },
-            [{"foo": []}],
+            [
+                {"foo": []},
+                {
+                    "foo": [
+                        {
+                            "bar": "0",
+                        },
+                    ],
+                },
+                {
+                    "foo": [
+                        {
+                            "bar": "00",
+                        },
+                    ],
+                },
+                {
+                    "foo": [
+                        {
+                            "bar": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+                        },
+                    ],
+                },
+                {
+                    "foo": [
+                        {
+                            "bar": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+                        },
+                    ],
+                },
+            ],
         ),
         (
             {
@@ -329,7 +369,14 @@ def test_positive_number(ctx, schema, multiple_of, values, with_multiple_of):
                     }
                 },
             },
-            [{"foo": []}],
+            [
+                {"foo": []},
+                {
+                    "foo": [
+                        "",
+                    ],
+                },
+            ],
         ),
         (
             {
@@ -507,12 +554,14 @@ def test_positive_number(ctx, schema, multiple_of, values, with_multiple_of):
             {"type": "array", "items": {"type": "integer"}, "example": [1, 2, 3]},
             [
                 [1, 2, 3],
+                [0],
             ],
         ),
         (
             {"type": "array", "items": {"type": "integer"}, "example": [1, 2, 3], "default": [1, 2, 3]},
             [
                 [1, 2, 3],
+                [0],
             ],
         ),
         (
@@ -520,12 +569,14 @@ def test_positive_number(ctx, schema, multiple_of, values, with_multiple_of):
             [
                 [1, 2, 3],
                 [4, 5, 6],
+                [0],
             ],
         ),
         (
             {"type": "array", "items": {"type": "integer"}, "default": [1, 2, 3]},
             [
                 [1, 2, 3],
+                [0],
             ],
         ),
         (
@@ -533,6 +584,7 @@ def test_positive_number(ctx, schema, multiple_of, values, with_multiple_of):
             [
                 [1, 2, 3],
                 [4, 5, 6],
+                [0],
             ],
         ),
         (
@@ -1099,3 +1151,364 @@ def test_ignoring_unknown_formats(pctx, schema, expected):
 )
 def test_negative_value_locations(nctx, schema, expected):
     assert {v.location for v in cover_schema_iter(nctx, schema)} == expected
+
+
+@pytest.mark.parametrize(
+    "ctx, expected",
+    (
+        (
+            "pctx",
+            [
+                {"name": "0"},
+                {"name": "00"},
+                {"name": "0" * 4000},
+                {"name": "0" * 3999},
+            ],
+        ),
+        (
+            "nctx",
+            [
+                {"name": "0" * 4001},
+                {
+                    "name": "",
+                },
+                {
+                    "name": 0,
+                },
+                {
+                    "name": False,
+                },
+                {
+                    "name": None,
+                },
+                {
+                    "name": [
+                        None,
+                        None,
+                    ],
+                },
+                {
+                    "name": {},
+                },
+                {},
+                0,
+                False,
+                None,
+                "",
+                [
+                    None,
+                    None,
+                ],
+            ],
+        ),
+    ),
+)
+def test_generate_large_string(request, ctx, expected):
+    ctx = request.getfixturevalue(ctx)
+    schema = {
+        "properties": {
+            "name": {"maxLength": 4000, "minLength": 1, "pattern": "^[\\w\\W]+$", "type": "string"},
+        },
+        "required": ["name"],
+        "type": "object",
+    }
+    assert cover_schema(ctx, schema) == expected
+
+
+def test_generate_very_large_string(nctx):
+    schema = {
+        "properties": {
+            "name": {"maxLength": 10000, "minLength": 1, "pattern": "^[\\w\\W]*$", "type": "string"},
+        },
+        "required": ["name"],
+        "type": "object",
+    }
+
+    assert 10001 in {
+        len(item["name"])
+        for item in cover_schema(nctx, schema)
+        if isinstance(item, dict) and isinstance(item.get("name"), str)
+    }
+
+
+def test_large_string_with_complex_pattern(nctx):
+    schema = {
+        "maxLength": 4000,
+        "minLength": 1,
+        "pattern": "^question\\.custom\\.[^,]+(?:,question\\.custom\\.[^,]+)*$",
+        "type": "string",
+    }
+    assert cover_schema(nctx, schema) == [
+        "0" * 4001,
+        "",
+        "0",
+        0,
+        False,
+        None,
+        [
+            None,
+            None,
+        ],
+        {},
+    ]
+
+
+def test_deeply_nested_values(pctx):
+    schema = {
+        "properties": {
+            "customer": {
+                "properties": {
+                    "contacts": {
+                        "properties": {
+                            "contact": {
+                                "items": {
+                                    "properties": {
+                                        "name": {
+                                            "maxLength": 10,
+                                            "minLength": 1,
+                                            "type": "string",
+                                        },
+                                        "phone": {
+                                            "items": {
+                                                "properties": {
+                                                    "phoneNumber": {
+                                                        "maxLength": 15,
+                                                        "minLength": 1,
+                                                        "type": "string",
+                                                    }
+                                                },
+                                                "type": "object",
+                                            },
+                                            "type": "array",
+                                        },
+                                    },
+                                    "required": ["name"],
+                                    "type": "object",
+                                },
+                                "type": "array",
+                            }
+                        },
+                        "type": "object",
+                    }
+                },
+                "type": "object",
+            },
+        },
+        "type": "object",
+    }
+    assert cover_schema(pctx, schema) == [
+        {
+            "customer": {
+                "contacts": {
+                    "contact": [],
+                },
+            },
+        },
+        {},
+        {
+            "customer": {},
+        },
+        {
+            "customer": {
+                "contacts": {},
+            },
+        },
+        {
+            "customer": {
+                "contacts": {
+                    "contact": [
+                        {
+                            "name": "0",
+                            "phone": [],
+                        },
+                    ],
+                },
+            },
+        },
+        {
+            "customer": {
+                "contacts": {
+                    "contact": [
+                        {
+                            "name": "0",
+                        },
+                    ],
+                },
+            },
+        },
+        {
+            "customer": {
+                "contacts": {
+                    "contact": [
+                        {
+                            "name": "00",
+                            "phone": [],
+                        },
+                    ],
+                },
+            },
+        },
+        {
+            "customer": {
+                "contacts": {
+                    "contact": [
+                        {
+                            "name": "0000000000",
+                            "phone": [],
+                        },
+                    ],
+                },
+            },
+        },
+        {
+            "customer": {
+                "contacts": {
+                    "contact": [
+                        {
+                            "name": "000000000",
+                            "phone": [],
+                        },
+                    ],
+                },
+            },
+        },
+        {
+            "customer": {
+                "contacts": {
+                    "contact": [
+                        {
+                            "name": "0",
+                            "phone": [
+                                {
+                                    "phoneNumber": "0",
+                                },
+                            ],
+                        },
+                    ],
+                },
+            },
+        },
+        {
+            "customer": {
+                "contacts": {
+                    "contact": [
+                        {
+                            "name": "0",
+                            "phone": [
+                                {},
+                            ],
+                        },
+                    ],
+                },
+            },
+        },
+        {
+            "customer": {
+                "contacts": {
+                    "contact": [
+                        {
+                            "name": "0",
+                            "phone": [
+                                {
+                                    "phoneNumber": "00",
+                                },
+                            ],
+                        },
+                    ],
+                },
+            },
+        },
+        {
+            "customer": {
+                "contacts": {
+                    "contact": [
+                        {
+                            "name": "0",
+                            "phone": [
+                                {
+                                    "phoneNumber": "000000000000000",
+                                },
+                            ],
+                        },
+                    ],
+                },
+            },
+        },
+        {
+            "customer": {
+                "contacts": {
+                    "contact": [
+                        {
+                            "name": "0",
+                            "phone": [
+                                {
+                                    "phoneNumber": "00000000000000",
+                                },
+                            ],
+                        },
+                    ],
+                },
+            },
+        },
+    ]
+
+
+def test_large_arrays(nctx):
+    schema = {
+        "properties": {
+            "questions": {
+                "items": {
+                    "properties": {
+                        "id": {"minLength": 6, "pattern": "^[0-9]+$", "type": "string"},
+                    },
+                    "required": ["id"],
+                    "type": "object",
+                    "additionalProperties": False,
+                },
+                "maxItems": 500,
+                "minItems": 0,
+                "type": "array",
+            },
+        },
+        "type": "object",
+    }
+
+    assert 501 in {
+        len(item["questions"])
+        for item in cover_schema(nctx, schema)
+        if isinstance(item, dict) and isinstance(item["questions"], list)
+    }
+
+
+def test_large_arrays_nested(nctx):
+    schema = {
+        "properties": {
+            "questions": {
+                "items": {
+                    "properties": {
+                        "answers": {
+                            "items": {
+                                "type": "null",
+                            },
+                            "maxItems": 100,
+                            "type": "array",
+                        },
+                        "id": {"minLength": 6, "pattern": "^[0-9]+$", "type": "string"},
+                    },
+                    "required": ["id"],
+                    "type": "object",
+                },
+                "maxItems": 500,
+                "minItems": 1,
+                "type": "array",
+            },
+        },
+        "required": ["questions"],
+        "type": "object",
+    }
+
+    assert 501 in {
+        len(item["questions"])
+        for item in cover_schema(nctx, schema)
+        if isinstance(item, dict) and isinstance(item.get("questions"), list)
+    }
