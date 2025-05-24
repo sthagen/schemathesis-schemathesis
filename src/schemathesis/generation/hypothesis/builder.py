@@ -14,6 +14,7 @@ from hypothesis import strategies as st
 from hypothesis._settings import all_settings
 from hypothesis.errors import Unsatisfiable
 from jsonschema.exceptions import SchemaError
+from requests.models import CaseInsensitiveDict
 
 from schemathesis import auths
 from schemathesis.auths import AuthStorage, AuthStorageMark
@@ -409,6 +410,10 @@ def _iter_coverage_cases(
     responses = find_in_responses(operation)
     # NOTE: The HEAD method is excluded
     unexpected_methods = unexpected_methods or {"get", "put", "post", "delete", "options", "patch", "trace"}
+
+    seen_negative = set()
+    seen_positive = set()
+
     for parameter in operation.iter_parameters():
         location = parameter.location
         name = parameter.name
@@ -486,6 +491,7 @@ def _iter_coverage_cases(
                     break
     elif GenerationMode.POSITIVE in generation_modes:
         data = template.unmodified()
+        seen_positive.add(coverage._to_hashable_key(data.kwargs))
         yield operation.Case(
             **data.kwargs,
             meta=CaseMetadata(
@@ -507,6 +513,15 @@ def _iter_coverage_cases(
                 data = template.with_parameter(location=location, name=name, value=value)
             except StopIteration:
                 break
+
+            if value.generation_mode == GenerationMode.NEGATIVE:
+                seen_negative.add(coverage._to_hashable_key(data.kwargs))
+            elif (
+                value.generation_mode == GenerationMode.POSITIVE
+                and coverage._to_hashable_key(data.kwargs) in seen_positive
+            ):
+                # Was already generated before
+                continue
 
             yield operation.Case(
                 **data.kwargs,
@@ -687,6 +702,10 @@ def _iter_coverage_cases(
             if GenerationMode.NEGATIVE in generation_modes:
                 subschema = _combination_schema(only_required, required, parameter_set)
                 for case in _yield_negative(subschema, location, container_name):
+                    key = _hash_key_for_case(case)
+                    if key in seen_negative:
+                        continue
+                    seen_negative.add(key)
                     assert case.meta is not None
                     assert isinstance(case.meta.phase.data, CoveragePhaseData)
                     # Already generated in one of the blocks above
@@ -734,6 +753,19 @@ def _iter_coverage_cases(
                             GenerationMode.POSITIVE,
                             Instant(),
                         )
+
+
+def _hash_key_for_case(case: Case) -> tuple[type, str | dict]:
+    from schemathesis.specs.openapi.constants import LOCATION_TO_CONTAINER
+
+    kwargs = {}
+    for container_name in LOCATION_TO_CONTAINER.values():
+        value = getattr(case, container_name)
+        if isinstance(value, CaseInsensitiveDict):
+            kwargs[container_name] = dict(value)
+        elif value and value is not NOT_SET:
+            kwargs[container_name] = value
+    return coverage._to_hashable_key(kwargs)
 
 
 def find_invalid_headers(headers: Mapping) -> Generator[tuple[str, str], None, None]:
