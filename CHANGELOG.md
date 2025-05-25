@@ -4,10 +4,9 @@
 
 ### :rocket: Added
 
-Introducing a new configuration file, `schemathesis.toml`, for persistent Schemathesis configuration management.
+Introducing `schemathesis.toml` as a configuration file for Schemathesis.
 
-This file enables fine-grained control over per-API operation settings as well as multi-project configurations.
-Global settings are defined at the top level, while operation-specific and project-specific configurations can be set under dedicated sections.
+It provides fine-grained control over individual API operations and supports multi-project configurations. Global settings go at the top level, with dedicated sections for operations and projects.
 
 CLI options override configuration file settings when specified.
 
@@ -29,20 +28,80 @@ base-url = "https://payments.example.com"
 workers = 4
 ```
 
+You can also use environment variable substitution for string values:
+
+```toml
+headers = { Authorization = "Bearer ${API_TOKEN}" }
+```
+
+- Stabilized `positive_data_acceptance` and `missing_required_header` checks.
+
 ### :bug: Fixed
 
-- Coverage Phase: Do not generate empty path parameters.
-- Coverage Phase: Skip empty string examples for path parameters.
-- Coverage Phase: Generate default values if examples are incorrect or inappropriate for their location.
-- Coverage Phase: Avoid duplicate positive test cases for string & numeric values in some scenarios.
-- Coverage Phase: Avoid duplicate negative test cases for objects in some scenarios.
-- Coverage Phase: Internal error caused by generating invalid header values.
+- **Coverage Phase**: 
+    - Do not generate empty path parameters.
+    - Skip empty string examples for path parameters.
+    - Generate default values if examples are incorrect or inappropriate for their location.
+    - Avoid duplicate positive test cases for string & numeric values in some scenarios.
+    - Avoid duplicate negative test cases for objects in some scenarios.
+    - Internal error caused by generating invalid header values.
+    - Internal error on `maxItems` & unsupported `pattern` combination.
 - Do not trigger `positive_data_acceptance` on 5xx responses.
 - Support for Hypothesis `>6.131.14`.
 
 ### :wrench: Changed
 
+- Enable all available checks by default.
 - **INTERNAL**: Ignore deprecation warnings from `jsonschema`.
+
+### :fire: Removed
+
+- `--experimental` CLI option. All experimental features have been stabilized.
+- `--experimental-coverage-unexpected-methods` CLI option. Use `[phases.coverage]` configuration table instead:
+
+```toml
+[phases.coverage]
+unexpected-methods = ["PATCH"]
+```
+
+- `--experimental-missing-required-header-allowed-statuses` CLI option. Use `[checks.missing_required_header]` configuration table instead:
+
+```toml
+[checks.missing_required_header]
+expected-statuses = [200, 201, 202]
+```
+
+- `--experimental-positive-data-acceptance-allowed-statuses` CLI option. Use `[checks.positive_data_acceptance]` configuration table instead:
+
+```toml
+[checks.positive_data_acceptance]
+expected-statuses = [200, 201, 202]
+```
+
+- `--experimental-negative-data-rejection-allowed-statuses` CLI option. Use `[checks.negative_data_rejection]` configuration table instead:
+
+```toml
+[checks.negative_data_rejection]
+expected-statuses = [200, 201, 202]
+```
+
+- `--set-{header,cookie,path,query}` CLI options. Use parameter overrides in the configuration file instead:
+
+```toml
+# Global parameters
+[parameters]
+api_version = "v2"
+
+# Operation-specific parameters
+[[operations]]
+include-name = "GET /users/"
+parameters = { limit = 50, offset = 0 }
+
+[[operations]]
+include-name = "GET /users/{user_id}/"
+# Disambiguate parameters with the same name
+parameters = { "path.user_id" = 42, "query.user_id" = 100 }
+```
 
 ## [4.0.0-alpha.10](https://github.com/schemathesis/schemathesis/compare/v4.0.0-alpha.9...v4.0.0-alpha.10) - 2025-05-07
 
