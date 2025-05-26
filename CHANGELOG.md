@@ -1,6 +1,8 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.0.0-alpha.10...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.0.0-alpha.11...HEAD) - TBD
+
+## [4.0.0-alpha.11](https://github.com/schemathesis/schemathesis/compare/v4.0.0-alpha.10...v4.0.0-alpha.11) - 2025-05-26
 
 ### :rocket: Added
 
@@ -46,12 +48,16 @@ headers = { Authorization = "Bearer ${API_TOKEN}" }
     - Avoid duplicate negative test cases for objects in some scenarios.
     - Internal error caused by generating invalid header values.
     - Internal error on `maxItems` & unsupported `pattern` combination.
+    - Incorrect generation mode in generated test cases which caused false positive in `positive_data_acceptance`.
+    - Generating strings of incorrect length on certain `pattern` & `maxLength` combinations.
 - Do not trigger `positive_data_acceptance` on 5xx responses.
 - Support for Hypothesis `>6.131.14`.
+- Internal error on CTRL-C when running API probes.
 
 ### :wrench: Changed
 
 - Enable all available checks by default.
+- Do not fallback to GraphQL loading if schema location ends with `openapi.json` and similar filenames. [#2757](https://github.com/schemathesis/schemathesis/issues/2757) 
 - **INTERNAL**: Ignore deprecation warnings from `jsonschema`.
 
 ### :fire: Removed
