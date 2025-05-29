@@ -1688,6 +1688,7 @@ def test_negative_query_parameter(ctx):
 
     config = ProjectConfig()
     config.generation.update(modes=[GenerationMode.NEGATIVE])
+    config.phases.coverage.generate_duplicate_query_parameters = True
     test_func = create_test(
         operation=operation,
         test_func=test,
@@ -1868,7 +1869,7 @@ def test_urlencoded_payloads_are_valid(ctx):
         assert_requests_call(case)
 
     config = ProjectConfig()
-    config.generation.update(modes=GenerationMode.all())
+    config.generation.update(modes=list(GenerationMode))
     test_func = create_test(
         operation=operation,
         test_func=test,
@@ -1908,7 +1909,7 @@ def test_no_missing_header_duplication(ctx):
         descriptions.append(case.meta.phase.data.description)
 
     config = ProjectConfig()
-    config.generation.update(modes=GenerationMode.all())
+    config.generation.update(modes=list(GenerationMode))
     test_func = create_test(
         operation=operation,
         test_func=test,
@@ -1927,6 +1928,7 @@ def test_no_missing_header_duplication(ctx):
 
 def assert_coverage(schema, modes, expected, path=None):
     schema = schemathesis.openapi.from_dict(schema)
+    schema.config.phases.coverage.generate_duplicate_query_parameters = True
 
     cases = []
     operation = schema[path[0]][path[1]] if path else schema["/foo"]["post"]
@@ -1967,6 +1969,7 @@ def assert_coverage(schema, modes, expected, path=None):
 
     config = ProjectConfig()
     config.generation.update(modes=modes)
+    config.phases.coverage.generate_duplicate_query_parameters = True
     test_func = create_test(
         operation=operation,
         test_func=test,
