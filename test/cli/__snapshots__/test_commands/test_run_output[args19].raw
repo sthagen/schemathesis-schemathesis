@@ -103,7 +103,7 @@ Output options:
                                 [default: true]
 
 Data generation options:
-  -m, --mode                      Test data generation mode  [default: positive]
+  -m, --mode                      Test data generation mode  [default: all]
                                   [possible values: positive, negative, all]
   -n, --max-examples INTEGER RANGE
                                   Maximum number of test cases per API operation
@@ -131,9 +131,6 @@ Data generation options:
                                   ':memory:' for temporary storage, or specify a
                                   file path for persistent storage
   --generation-unique-inputs      Force the generation of unique test cases
-  --contrib-openapi-fill-missing-examples
-                                  Enable generation of random examples for API
-                                  operations that do not have explicit examples
 
 Global options:
   --no-color     Disable ANSI color escape codes

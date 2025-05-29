@@ -10,6 +10,21 @@
 
 - **Coverage phase**: Incorrect reference resolution scope during test generation
 - Do not show the `operation returned only 4xx responses during unit tests` warning if the API operation only returned HTTP 500 responses.
+- Internal error inside `ignored_auth` in negative testing mode.
+
+### :wrench: Changed
+
+- Run positive and negative tests by default.
+- Add timestamps to report filenames to avoid rewriting exiting report in subsequent runs.
+
+### :fire: Removed
+
+- `--contrib-openapi-fill-missing-examples`. Use `[phases.examples]` configuration table instead:
+
+```toml
+[phases.coverage]
+fill-missing = true
+```
 
 ## [4.0.0-alpha.11](https://github.com/schemathesis/schemathesis/compare/v4.0.0-alpha.10...v4.0.0-alpha.11) - 2025-05-26
 

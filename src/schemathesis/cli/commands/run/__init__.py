@@ -6,7 +6,6 @@ from typing import Any, Callable
 import click
 from click.utils import LazyFile
 
-from schemathesis import contrib
 from schemathesis.checks import CHECKS
 from schemathesis.cli.commands.run import executor, validation
 from schemathesis.cli.commands.run.filters import with_filters
@@ -22,7 +21,7 @@ from schemathesis.cli.ext.options import (
 from schemathesis.config import DEFAULT_REPORT_DIRECTORY, HealthCheck, ReportFormat, SchemathesisConfig
 from schemathesis.core import HYPOTHESIS_IN_MEMORY_DATABASE_IDENTIFIER
 from schemathesis.core.transport import DEFAULT_RESPONSE_TIMEOUT
-from schemathesis.generation import DEFAULT_GENERATOR_MODES, GenerationMode
+from schemathesis.generation import GenerationMode
 from schemathesis.generation.targets import TARGETS, TargetFunction
 
 # NOTE: Need to explicitly import all registered checks
@@ -296,7 +295,7 @@ DEFAULT_PHASES = ["examples", "coverage", "fuzzing", "stateful"]
     "generation_modes",
     help="Test data generation mode",
     type=click.Choice([item.value for item in GenerationMode] + ["all"]),
-    default=GenerationMode.default().value,
+    default="all",
     callback=validation.convert_generation_mode,
     show_default=True,
     metavar="",
@@ -390,15 +389,6 @@ DEFAULT_PHASES = ["examples", "coverage", "fuzzing", "stateful"]
     show_default=True,
     metavar="BOOLEAN",
 )
-@grouped_option(
-    "--contrib-openapi-fill-missing-examples",
-    "contrib_openapi_fill_missing_examples",
-    help="Enable generation of random examples for API operations that do not have explicit examples",
-    is_flag=True,
-    default=False,
-    show_default=True,
-    metavar="BOOLEAN",
-)
 @group("Global options")
 @grouped_option("--no-color", help="Disable ANSI color escape codes", type=bool, is_flag=True)
 @grouped_option("--force-color", help="Explicitly tells to enable ANSI color escape codes", type=bool, is_flag=True)
@@ -456,8 +446,7 @@ def run(
     report_preserve_bytes: bool = False,
     output_sanitize: bool = True,
     output_truncate: bool = True,
-    contrib_openapi_fill_missing_examples: bool = False,
-    generation_modes: list[GenerationMode] = DEFAULT_GENERATOR_MODES,
+    generation_modes: list[GenerationMode] = GenerationMode.all(),
     generation_seed: int | None = None,
     generation_max_examples: int | None = None,
     generation_maximize: list[TargetFunction] | None,
@@ -493,9 +482,6 @@ def run(
     ensure_color(ctx, color)
 
     validation.validate_auth_overlap(auth, headers)
-
-    if contrib_openapi_fill_missing_examples:
-        contrib.openapi.fill_missing_examples.install()
 
     # Then override the global config from CLI options
     config.update(
