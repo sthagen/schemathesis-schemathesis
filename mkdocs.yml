@@ -27,7 +27,7 @@ nav:
       - Checks: reference/checks.md
       - Hooks: reference/hooks.md
       - Reporting: reference/reporting.md
-      - Python API Reference: reference/python.md
+      - reference/python.md
       - reference/warnings.md
   - External Resources: resources.md
   - Troubleshooting: troubleshooting.md
@@ -94,5 +94,13 @@ markdown_extensions:
 
 extra_css:
   - stylesheets/extra.css
+
+plugins:
+- mkdocstrings:
+    handlers:
+      python:
+        paths: [src]
+        options:
+          show_source: false
 
 copyright: Copyright &copy; 2020-2025 Dmitry Dygalo & Schemathesis.io

@@ -5,6 +5,7 @@
 ### :rocket: Added
 
 - A way to configure status codes for the `not_a_server_error` check. [#2539](https://github.com/schemathesis/schemathesis/issues/2539) 
+- `@schemathesis.serializer` decorator as a way to serialize data of media types not supported by Schemathesis.
 
 ### :bug: Fixed
 
@@ -23,6 +24,7 @@
 - Report cURL commands for some network-level errors (connection resets, server crashes). [#2709](https://github.com/schemathesis/schemathesis/issues/2709)
 - Cleanup pytest output. [#2714](https://github.com/schemathesis/schemathesis/issues/2714)
 - Clarify warnings and make them configurable. [#2761](https://github.com/schemathesis/schemathesis/issues/2761)
+- Rename entities related to Targeted Property-based testing. `schemathesis.target` -> `schemathesis.metric`, `TargetContext` -> `MetricContext`
 
 ### :fire: Removed
 

@@ -12,7 +12,7 @@ from schemathesis.checks import CHECKS
 from schemathesis.cli.commands.run.handlers.output import DEFAULT_INTERNAL_ERROR_MESSAGE
 from schemathesis.config._validator import CONFIG_SCHEMA
 from schemathesis.core.transforms import deepclone
-from schemathesis.generation.targets import TARGETS
+from schemathesis.generation.metrics import METRICS
 
 
 @pytest.fixture(scope="module")
@@ -76,7 +76,7 @@ def csv_strategy(enum, exclude=()):
         optional={
             "auth": delimited(),
             "generation-mode": st.sampled_from([item.name.lower() for item in GenerationMode] + ["all"]),
-            "generation-optimize": st.sampled_from(TARGETS.get_all_names()),
+            "generation-optimize": st.sampled_from(METRICS.get_all_names()),
             "workers": st.integers(min_value=1, max_value=64),
             "request-timeout": st.integers(min_value=1),
             "max-response-time": st.integers(min_value=1),
@@ -242,7 +242,7 @@ def remove_nones(value):
     verbosity=Verbosity.quiet,
     max_examples=7,
 )
-@pytest.mark.usefixtures("mocked_schema")
+@pytest.mark.usefixtures("mocked_schema", "mocked_call")
 def test_random_config(cli, config, schema_url, tmp_path):
     reports = config.get("reports", {})
     report_enabled = False
