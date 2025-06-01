@@ -128,6 +128,10 @@ class BaseOpenAPISchema(BaseSchema):
         cache.insert_map(path, map)
         return map
 
+    def find_operation_by_label(self, label: str) -> APIOperation | None:
+        method, path = label.split(" ", maxsplit=1)
+        return self[path][method]
+
     def on_missing_operation(self, item: str, exc: KeyError) -> NoReturn:
         matches = get_close_matches(item, list(self))
         self._on_missing_operation(item, exc, matches)
@@ -659,6 +663,7 @@ class BaseOpenAPISchema(BaseSchema):
         return jsonschema.Draft4Validator
 
     def validate_response(self, operation: APIOperation, response: Response) -> bool | None:
+        __tracebackhide__ = True
         responses = {str(key): value for key, value in operation.definition.raw.get("responses", {}).items()}
         status_code = str(response.status_code)
         if status_code in responses:

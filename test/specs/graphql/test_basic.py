@@ -21,6 +21,7 @@ from schemathesis.specs.openapi.checks import (
     positive_data_acceptance,
     use_after_free,
 )
+from schemathesis.transport.prepare import get_default_headers
 from schemathesis.transport.wsgi import WSGI_TRANSPORT
 from test.apps import _graphql as graphql
 from test.apps._graphql.schema import Author
@@ -54,7 +55,12 @@ def test_as_wsgi_kwargs(graphql_strategy):
         "path": "/graphql",
         "query_string": None,
         "json": {"query": case.body},
-        "headers": {"User-Agent": USER_AGENT, SCHEMATHESIS_TEST_CASE_HEADER: ANY, "Content-Type": "application/json"},
+        "headers": {
+            **get_default_headers(),
+            "User-Agent": USER_AGENT,
+            SCHEMATHESIS_TEST_CASE_HEADER: ANY,
+            "Content-Type": "application/json",
+        },
     }
     assert WSGI_TRANSPORT.serialize_case(case) == expected
 
@@ -300,6 +306,9 @@ def test_unknown_field_name(graphql_schema, name, expected):
 def test_field_map_operations(graphql_schema):
     assert len(graphql_schema["Query"]) == 2
     assert list(iter(graphql_schema["Query"])) == ["getBooks", "getAuthors"]
+    assert graphql_schema.find_operation_by_label("Query.getBooks") is not None
+    assert graphql_schema.find_operation_by_label("Query.getBookz") is None
+    assert graphql_schema.find_operation_by_label("getBookz") is None
 
 
 def test_repr(graphql_schema):

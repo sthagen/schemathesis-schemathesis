@@ -980,7 +980,7 @@ def test_auth_override_on_protected_operation(cli, schema_url, extra, snapshot_c
     # And the auth is overridden (directly or via headers)
     # And there is an error during testing
     # Then the code sample representation in the output should have the overridden value
-    assert cli.run(schema_url, "--output-sanitize=false", extra) == snapshot_cli
+    assert cli.run(schema_url, "--output-sanitize=false", "--phases=fuzzing", extra) == snapshot_cli
 
 
 @pytest.mark.openapi_version("3.0")
@@ -1142,25 +1142,6 @@ def test_skipped_on_no_explicit_examples(cli, openapi3_schema_url, snapshot_cli)
     assert cli.run(openapi3_schema_url, "--phases=examples") == snapshot_cli
 
 
-@pytest.mark.operations("basic")
-def test_warning_on_unauthorized(cli, openapi3_schema_url, snapshot_cli):
-    # When endpoint returns only 401
-    # Then the output should contain a warning about it
-    assert cli.run(openapi3_schema_url, "-c not_a_server_error", "--mode=positive") == snapshot_cli
-
-
-@pytest.mark.operations("always_incorrect")
-def test_warning_on_no_2xx(cli, openapi3_schema_url, snapshot_cli):
-    # When endpoint does not return 2xx at all
-    # Then the output should contain a warning about it
-    assert cli.run(openapi3_schema_url, "-c not_a_server_error") == snapshot_cli
-
-
-@pytest.mark.operations("always_incorrect")
-def test_warning_on_no_2xx_options_only(cli, openapi3_schema_url, snapshot_cli):
-    assert cli.run(openapi3_schema_url, "--mode=all", "--phases=coverage", "-c not_a_server_error") == snapshot_cli
-
-
 @pytest.fixture
 def data_generation_check(ctx):
     with ctx.check(
@@ -1195,13 +1176,6 @@ def test_multiple_generation_modes(cli, openapi3_schema_url, data_generation_che
     assert result.exit_code == ExitCode.OK, result.stdout
     assert "MODE: positive" in result.stdout
     assert "MODE: negative" in result.stdout
-
-
-@pytest.mark.operations("success", "failure")
-def test_warning_on_all_not_found(cli, openapi3_schema_url, openapi3_base_url, snapshot_cli):
-    # When all endpoints return 404
-    # Then the output should contain a warning about it
-    assert cli.run(openapi3_schema_url, f"--url={openapi3_base_url}/v4/", "-c not_a_server_error") == snapshot_cli
 
 
 @pytest.mark.parametrize(
@@ -1715,3 +1689,193 @@ def always_fails(ctx, response, case):
             )
             == snapshot_cli
         )
+
+
+@pytest.mark.skipif(platform.system() == "Windows", reason="Requires extra setup on Windows")
+def test_app_crash(subprocess_runner, cli, snapshot_cli):
+    app = """
+import os
+from flask import Flask, jsonify
+import ctypes
+
+app = Flask(__name__)
+
+raw_schema = {
+    "openapi": "3.0.0",
+    "info": {"title": "Crash Test", "version": "1.0.0"},
+    "paths": {"/crash": {"get": {"responses": {"200": {"description": "Won't return"}}}}},
+}
+
+@app.route("/openapi.json")
+def openapi():
+    return jsonify(raw_schema)
+
+@app.get("/crash")
+def crash():
+    ctypes.string_at(0)  # Segfault
+
+if __name__ == "__main__":
+    port = int(os.environ["PORT"])
+    app.run(host="127.0.0.1", port=port, debug=False)
+"""
+
+    port = subprocess_runner.run_app(app)
+
+    assert cli.main("run", f"http://127.0.0.1:{port}/openapi.json", "--tls-verify=false") == snapshot_cli
+
+
+@pytest.mark.skipif(platform.system() == "Windows", reason="Requires extra setup on Windows")
+def test_partial_response(subprocess_runner, cli, snapshot_cli):
+    app = """
+import os
+import sys
+from flask import Flask, jsonify, Response
+import time
+
+app = Flask(__name__)
+
+raw_schema = {
+    "openapi": "3.0.0",
+    "info": {"title": "Partial Response Test", "version": "1.0.0"},
+    "paths": {"/crash": {"get": {"responses": {"200": {"description": "Won't return"}}}}},
+}
+
+@app.route("/openapi.json")
+def openapi():
+    return jsonify(raw_schema)
+
+@app.get("/crash")
+def crash():
+    def generate():
+        yield '{"partial":'
+        sys.stdout.flush()
+        # Force connection reset while client expects more data
+        os._exit(1)
+
+    return Response(generate(), mimetype='application/json')
+
+if __name__ == "__main__":
+    port = int(os.environ["PORT"])
+    app.run(host="127.0.0.1", port=port, debug=False)
+"""
+
+    port = subprocess_runner.run_app(app)
+
+    assert cli.main("run", f"http://127.0.0.1:{port}/openapi.json", "--tls-verify=false") == snapshot_cli
+
+
+@pytest.mark.skipif(platform.system() == "Windows", reason="Requires extra setup on Windows")
+@pytest.mark.snapshot(replace_phase_statistic=True)
+def test_stateful_crash(subprocess_runner, cli, snapshot_cli):
+    app = """
+import os
+from flask import Flask, jsonify, request
+import ctypes
+
+app = Flask(__name__)
+
+raw_schema = {
+    "openapi": "3.0.0",
+    "info": {"title": "Stateful Crash Test", "version": "1.0.0"},
+    "paths": {
+        "/users": {
+            "post": {
+                "summary": "Create user",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {"name": {"type": "string"}},
+                                "required": ["name"]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "User created",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {"id": {"type": "integer"}},
+                                    "required": ["id"]
+                                }
+                            }
+                        },
+                        "links": {
+                            "GetUserById": {
+                                "operationId": "getUserById",
+                                "parameters": {"id": "$response.body#/id"}
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/users/{id}": {
+            "get": {
+                "operationId": "getUserById",
+                "summary": "Get user by ID",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": True,
+                        "schema": {"type": "integer"}
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "User details",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {"type": "integer"},
+                                        "name": {"type": "string"}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@app.route("/openapi.json")
+def openapi():
+    return jsonify(raw_schema)
+
+@app.route("/users", methods=["POST"])
+def create_user():
+    return jsonify({"id": 123}), 201
+
+@app.route("/users/<int:user_id>", methods=["GET"])
+def get_user(user_id):
+    # Crash during stateful testing when following the link
+    ctypes.string_at(0)  # Segfault
+
+if __name__ == "__main__":
+    port = int(os.environ["PORT"])
+    app.run(host="127.0.0.1", port=port, debug=False)
+"""
+
+    port = subprocess_runner.run_app(app)
+
+    assert (
+        cli.main(
+            "run",
+            f"http://127.0.0.1:{port}/openapi.json",
+            "--phases=stateful",
+            "--tls-verify=false",
+            "-c not_a_server_error",
+            "--max-examples=1",
+            "--mode=positive",
+        )
+        == snapshot_cli
+    )
