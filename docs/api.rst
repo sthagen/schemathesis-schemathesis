@@ -1,42 +1,8 @@
 Public API reference
 ====================
 
-Checks
-~~~~~~
-
-.. autofunction:: schemathesis.check
-
-Data Generation
-~~~~~~~~~~~~~~~
-
-.. autoclass:: schemathesis.GenerationConfig
-   :members:
-
-
-Authentication
-~~~~~~~~~~~~~~
-
-.. automodule:: schemathesis.auths
-
-.. autofunction:: schemathesis.auth
-
-.. autoclass:: schemathesis.auths.AuthProvider
-   :members:
-
-.. autoclass:: schemathesis.auths.AuthContext
-   :members:
-
 Hooks
 ~~~~~
-
-.. autoclass:: schemathesis.HookContext
-   :members:
-
-These functions affect Schemathesis behavior globally:
-
-.. autofunction:: schemathesis.hook
-.. autofunction:: schemathesis.hooks.unregister
-.. autofunction:: schemathesis.hooks.unregister_all
 
 .. class:: schemathesis.BaseSchema
   :noindex:
@@ -61,38 +27,6 @@ These functions affect Schemathesis behavior globally:
         @schema.parametrize()
         def test_api(case):
             ...
-
-Custom strategies for Open API "format" keyword
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. autofunction:: schemathesis.openapi.format
-
-Custom strategies for Open API media types
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. autofunction:: schemathesis.openapi.media_type
-
-Custom scalars for GraphQL
-~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. autofunction:: schemathesis.graphql.scalar
-
-Loaders
-~~~~~~~
-
-.. autofunction:: schemathesis.openapi.from_asgi
-.. autofunction:: schemathesis.openapi.from_dict
-.. autofunction:: schemathesis.openapi.from_file
-.. autofunction:: schemathesis.openapi.from_path
-.. autofunction:: schemathesis.openapi.from_url
-.. autofunction:: schemathesis.openapi.from_wsgi
-.. autofunction:: schemathesis.graphql.from_path
-.. autofunction:: schemathesis.graphql.from_dict
-.. autofunction:: schemathesis.graphql.from_file
-.. autofunction:: schemathesis.graphql.from_url
-.. autofunction:: schemathesis.graphql.from_asgi
-.. autofunction:: schemathesis.graphql.from_wsgi
-.. autofunction:: schemathesis.pytest.from_fixture
 
 Schema
 ~~~~~~

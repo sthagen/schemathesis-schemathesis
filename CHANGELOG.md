@@ -1,6 +1,28 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.0.0-alpha.11...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.0.0-alpha.12...HEAD) - TBD
+
+### :wrench: Changed
+
+- Generate at least one non-NULL character in path parameters. [#2790](https://github.com/schemathesis/schemathesis/issues/2790)  
+
+## [4.0.0-alpha.12](https://github.com/schemathesis/schemathesis/compare/v4.0.0-alpha.11...v4.0.0-alpha.12) - 2025-06-02
+
+This release features rewritten documentation, now live at https://schemathesis.github.io/schemathesis/
+
+What's included:
+
+- Quick Start Guide and tutorial
+- 8 practical how-to guides
+- Core concepts and architecture explanations
+- Complete CLI, configuration, and Python API reference
+
+Coming in the next release:
+
+- Pytest integration guide
+- Remaining pytest-specific API documentation
+
+This should be the final alpha release. Going forward, I'll focus on documentation improvements, feature polish, and providing a migration guide for the stable release.
 
 ### :rocket: Added
 
