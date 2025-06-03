@@ -5,6 +5,12 @@
 ### :wrench: Changed
 
 - Generate at least one non-NULL character in path parameters. [#2790](https://github.com/schemathesis/schemathesis/issues/2790)  
+- Improved failure messages for `unsupported_method` and `missing_required_header` checks.
+
+### :bug: Fixed
+
+- Internal error during negative testing in some cases on Open API 3.1.
+- Pytest integration not using all built-in checks by default.
 
 ## [4.0.0-alpha.12](https://github.com/schemathesis/schemathesis/compare/v4.0.0-alpha.11...v4.0.0-alpha.12) - 2025-06-02
 
