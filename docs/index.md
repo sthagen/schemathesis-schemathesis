@@ -22,12 +22,11 @@ uvx schemathesis run https://example.schemathesis.io/openapi.json
 
 This command will immediately find real bugs in a demo API and show you exactly how to reproduce them.
 
-**Bugs that cause real problems**:
+**Bugs Schemathesis finds cause real problems**:
 
 - Registration forms that crash on legitimate international names
 - Shopping carts accepting negative quantities or invalid product IDs
 - User profiles returning incomplete data that breaks mobile apps
-- APIs that fail silently instead of showing proper error messages
 
 ## Why developers choose Schemathesis
 
@@ -35,15 +34,17 @@ Immediate results:
 
  - **🎯 Find 5-15 real bugs** in a typical API within the first test run
 
- - **⏱️ 2-minute setup** - Just point it at your OpenAPI schema
+ - **⏱️ 1-minute setup** - Just point it at your OpenAPI schema
 
  - **🔄 Zero maintenance** - Automatically tests new endpoints as you add them
 
 Easy integration:
 
- - **🔌 Works with existing tools** - Integrates with pytest and CI/CD
+ - **🔌 Works with existing tools** - Supports variety of export formats like JUnit and HAR
 
  - **📑 Uses your existing docs** - Reads OpenAPI/GraphQL schemas you already have
+
+ - **🐍 Has a flexible Python API** - Integrates with `pytest` directly
 
 !!! quote "Developer feedback"
     "The tool is amazing as it can test negative scenarios instead of me and much faster!" 
@@ -60,14 +61,15 @@ Easy integration:
 
     Get started in minutes:
 
-    - [:octicons-arrow-right-24: Quick Start - 5 minute demo](quick-start.md)
-    - [:octicons-arrow-right-24: Tutorial - 20 minute walkthrough](tutorial.md)
+    - [:octicons-arrow-right-24: Quick Start - 5 minutes](quick-start.md)
+    - [:octicons-arrow-right-24: CLI Tutorial - 20 minutes](tutorials/cli.md)
+    - [:octicons-arrow-right-24: Pytest Tutorial - 15 minutes](tutorials/pytest.md)
 
 -   :material-puzzle:{ .lg .middle style="color: #4CAF50" } __How-To Guides__
 
     ---
 
-    Production setup guides:
+    Practical guides for common scenarios:
 
      - [:octicons-arrow-right-24: CI/CD Integration](guides/cicd.md)
      - [:octicons-arrow-right-24: Extending Schemathesis](guides/extending.md)
