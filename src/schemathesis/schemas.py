@@ -40,8 +40,11 @@ from .filters import (
 from .hooks import GLOBAL_HOOK_DISPATCHER, HookContext, HookDispatcher, HookScope, dispatch, to_filterable_hook
 
 if TYPE_CHECKING:
+    import httpx
+    import requests
     from hypothesis.strategies import SearchStrategy
     from typing_extensions import Self
+    from werkzeug.test import TestResponse
 
     from schemathesis.core import Specification
     from schemathesis.generation.stateful.state_machine import APIStateMachine
@@ -136,7 +139,25 @@ class BaseSchema(Mapping):
         operation_id: FilterValue | None = None,
         operation_id_regex: RegexValue | None = None,
     ) -> BaseSchema:
-        """Include only operations that match the given filters."""
+        """Return a new schema containing only operations matching the specified criteria.
+
+        Args:
+            func: Custom filter function that accepts operation context.
+            name: Operation name(s) to include.
+            name_regex: Regex pattern for operation names.
+            method: HTTP method(s) to include.
+            method_regex: Regex pattern for HTTP methods.
+            path: API path(s) to include.
+            path_regex: Regex pattern for API paths.
+            tag: OpenAPI tag(s) to include.
+            tag_regex: Regex pattern for OpenAPI tags.
+            operation_id: Operation ID(s) to include.
+            operation_id_regex: Regex pattern for operation IDs.
+
+        Returns:
+            New schema instance with applied include filters.
+
+        """
         filter_set = self.filter_set.clone()
         filter_set.include(
             func,
@@ -169,7 +190,26 @@ class BaseSchema(Mapping):
         operation_id_regex: RegexValue | None = None,
         deprecated: bool = False,
     ) -> BaseSchema:
-        """Include only operations that match the given filters."""
+        """Return a new schema excluding operations matching the specified criteria.
+
+        Args:
+            func: Custom filter function that accepts operation context.
+            name: Operation name(s) to exclude.
+            name_regex: Regex pattern for operation names.
+            method: HTTP method(s) to exclude.
+            method_regex: Regex pattern for HTTP methods.
+            path: API path(s) to exclude.
+            path_regex: Regex pattern for API paths.
+            tag: OpenAPI tag(s) to exclude.
+            tag_regex: Regex pattern for OpenAPI tags.
+            operation_id: Operation ID(s) to exclude.
+            operation_id_regex: Regex pattern for operation IDs.
+            deprecated: Whether to exclude deprecated operations.
+
+        Returns:
+            New schema instance with applied exclude filters.
+
+        """
         filter_set = self.filter_set.clone()
         if deprecated:
             if func is None:
@@ -211,10 +251,15 @@ class BaseSchema(Mapping):
         return self.statistic.operations.total
 
     def hook(self, hook: str | Callable) -> Callable:
+        """Register a hook function for this schema only.
+
+        Args:
+            hook: Hook name string or hook function to register.
+
+        """
         return self.hooks.hook(hook)
 
     def get_full_path(self, path: str) -> str:
-        """Compute full path for the given path."""
         return get_full_path(self.base_path, path)
 
     @property
@@ -258,19 +303,27 @@ class BaseSchema(Mapping):
         raise NotImplementedError
 
     def get_strategies_from_examples(self, operation: APIOperation, **kwargs: Any) -> list[SearchStrategy[Case]]:
-        """Get examples from the API operation."""
         raise NotImplementedError
 
     def get_security_requirements(self, operation: APIOperation) -> list[str]:
-        """Get applied security requirements for the given API operation."""
         raise NotImplementedError
 
     def get_parameter_serializer(self, operation: APIOperation, location: str) -> Callable | None:
-        """Get a function that serializes parameters for the given location."""
         raise NotImplementedError
 
     def parametrize(self) -> Callable:
-        """Mark a test function as a parametrized one."""
+        """Return a decorator that marks a test function for `pytest` parametrization.
+
+        The decorated test function will be parametrized with test cases generated
+        from the schema's API operations.
+
+        Returns:
+            Decorator function for test parametrization.
+
+        Raises:
+            IncorrectUsage: If applied to the same function multiple times.
+
+        """
 
         def wrapper(func: Callable) -> Callable:
             from schemathesis.pytest.plugin import SchemaHandleMark
@@ -293,7 +346,13 @@ class BaseSchema(Mapping):
         return wrapper
 
     def given(self, *args: GivenInput, **kwargs: GivenInput) -> Callable:
-        """Proxy Hypothesis strategies to ``hypothesis.given``."""
+        """Proxy to Hypothesis's `given` decorator for adding custom strategies.
+
+        Args:
+            *args: Positional arguments passed to `hypothesis.given`.
+            **kwargs: Keyword arguments passed to `hypothesis.given`.
+
+        """
         return given_proxy(*args, **kwargs)
 
     def clone(
@@ -320,7 +379,6 @@ class BaseSchema(Mapping):
         )
 
     def get_local_hook_dispatcher(self) -> HookDispatcher | None:
-        """Get a HookDispatcher instance bound to the test if present."""
         # It might be not present when it is used without pytest via `APIOperation.as_strategy()`
         if self.test_function is not None:
             # Might be missing it in case of `LazySchema` usage
@@ -328,7 +386,6 @@ class BaseSchema(Mapping):
         return None
 
     def dispatch_hook(self, name: str, context: HookContext, *args: Any, **kwargs: Any) -> None:
-        """Dispatch a hook via all available dispatchers."""
         dispatch(name, context, *args, **kwargs)
         self.hooks.dispatch(name, context, *args, **kwargs)
         local_dispatcher = self.get_local_hook_dispatcher()
@@ -338,10 +395,6 @@ class BaseSchema(Mapping):
     def prepare_multipart(
         self, form_data: dict[str, Any], operation: APIOperation
     ) -> tuple[list | None, dict[str, Any] | None]:
-        """Split content of `form_data` into files & data.
-
-        Forms may contain file fields, that we should send via `files` argument in `requests`.
-        """
         raise NotImplementedError
 
     def get_request_payload_content_types(self, operation: APIOperation) -> list[str]:
@@ -374,7 +427,12 @@ class BaseSchema(Mapping):
         raise NotImplementedError
 
     def as_state_machine(self) -> type[APIStateMachine]:
-        """Create a state machine class."""
+        """Create a state machine class for stateful testing of linked API operations.
+
+        Returns:
+            APIStateMachine subclass configured for this schema.
+
+        """
         raise NotImplementedError
 
     def get_links(self, operation: APIOperation) -> dict[str, dict[str, Any]]:
@@ -394,19 +452,23 @@ class BaseSchema(Mapping):
 
     def as_strategy(
         self,
-        hooks: HookDispatcher | None = None,
-        auth_storage: AuthStorage | None = None,
         generation_mode: GenerationMode = GenerationMode.POSITIVE,
         **kwargs: Any,
     ) -> SearchStrategy:
-        """Build a strategy for generating test cases for all defined API operations."""
+        """Create a Hypothesis strategy that generates test cases for all schema operations.
+
+        Use with `@given` in non-Schemathesis tests.
+
+        Args:
+            generation_mode: Whether to generate positive or negative test data.
+            **kwargs: Additional keywords for each strategy.
+
+        Returns:
+            Combined Hypothesis strategy for all valid operations in the schema.
+
+        """
         _strategies = [
-            operation.ok().as_strategy(
-                hooks=hooks,
-                auth_storage=auth_storage,
-                generation_mode=generation_mode,
-                **kwargs,
-            )
+            operation.ok().as_strategy(generation_mode=generation_mode, **kwargs)
             for operation in self.get_all_operations()
             if isinstance(operation, Ok)
         ]
@@ -444,20 +506,23 @@ class APIOperationMap(Mapping):
 
     def as_strategy(
         self,
-        hooks: HookDispatcher | None = None,
-        auth_storage: AuthStorage | None = None,
         generation_mode: GenerationMode = GenerationMode.POSITIVE,
         **kwargs: Any,
     ) -> SearchStrategy:
-        """Build a strategy for generating test cases for all API operations defined in this subset."""
+        """Create a Hypothesis strategy that generates test cases for all schema operations in this subset.
+
+        Use with `@given` in non-Schemathesis tests.
+
+        Args:
+            generation_mode: Whether to generate positive or negative test data.
+            **kwargs: Additional keywords for each strategy.
+
+        Returns:
+            Combined Hypothesis strategy for all valid operations in the schema.
+
+        """
         _strategies = [
-            operation.as_strategy(
-                hooks=hooks,
-                auth_storage=auth_storage,
-                generation_mode=generation_mode,
-                **kwargs,
-            )
-            for operation in self._data.values()
+            operation.as_strategy(generation_mode=generation_mode, **kwargs) for operation in self._data.values()
         ]
         return strategies.combine(_strategies)
 
@@ -629,24 +694,19 @@ class APIOperation(Generic[P]):
 
     def as_strategy(
         self,
-        hooks: HookDispatcher | None = None,
-        auth_storage: AuthStorage | None = None,
         generation_mode: GenerationMode = GenerationMode.POSITIVE,
         **kwargs: Any,
     ) -> SearchStrategy[Case]:
-        """Convert to Hypothesis strategy for custom testing workflows.
+        """Create a Hypothesis strategy that generates test cases for this API operation.
 
-        Returns a strategy that generates `Case` objects for this operation.
         Use with `@given` in non-Schemathesis tests.
 
         Args:
-            hooks: Custom hooks to apply during generation.
-            auth_storage: Authentication configuration.
             generation_mode: Whether to generate positive or negative test data.
             **kwargs: Extra arguments to the underlying strategy function.
 
         """
-        strategy = self.schema.get_case_strategy(self, hooks, auth_storage, generation_mode, **kwargs)
+        strategy = self.schema.get_case_strategy(self, generation_mode=generation_mode, **kwargs)
 
         def _apply_hooks(dispatcher: HookDispatcher, _strategy: SearchStrategy[Case]) -> SearchStrategy[Case]:
             context = HookContext(operation=self)
@@ -665,6 +725,7 @@ class APIOperation(Generic[P]):
 
         strategy = _apply_hooks(GLOBAL_HOOK_DISPATCHER, strategy)
         strategy = _apply_hooks(self.schema.hooks, strategy)
+        hooks = kwargs.get("hooks")
         if hooks is not None:
             strategy = _apply_hooks(hooks, strategy)
         return strategy
@@ -738,17 +799,37 @@ class APIOperation(Generic[P]):
         path = self.path.replace("~", "~0").replace("/", "~1")
         return f"#/paths/{path}/{self.method}"
 
-    def validate_response(self, response: Response) -> bool | None:
-        """Check response against API schema.
+    def validate_response(self, response: Response | httpx.Response | requests.Response | TestResponse) -> bool | None:
+        """Validate a response against the API schema.
+
+        Args:
+            response: The HTTP response to validate. Can be a `requests.Response`,
+                `httpx.Response`, `werkzeug.test.TestResponse`, or `schemathesis.Response`.
 
         Raises:
-            FailureGroup: When response violates schema.
+            FailureGroup: If the response does not conform to the schema.
 
         """
-        return self.schema.validate_response(self, response)
+        import httpx
+        import requests
+        from werkzeug.test import TestResponse
 
-    def is_response_valid(self, response: Response) -> bool:
-        """Check if response passes schema validation.
+        if isinstance(response, requests.Response):
+            response_ = Response.from_requests(response, verify=True)
+        elif isinstance(response, httpx.Response):
+            response_ = Response.from_httpx(response, verify=True)
+        elif isinstance(response, TestResponse):
+            response_ = Response.from_wsgi(response)
+        else:
+            response_ = response
+        return self.schema.validate_response(self, response_)
+
+    def is_valid_response(self, response: Response | httpx.Response | requests.Response | TestResponse) -> bool:
+        """Check if the provided response is valid against the API schema.
+
+        Args:
+            response: The HTTP response to validate. Can be a `requests.Response`,
+                `httpx.Response`, `werkzeug.test.TestResponse`, or `schemathesis.Response`.
 
         Returns:
             `True` if response is valid, `False` otherwise.

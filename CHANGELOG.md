@@ -9,6 +9,10 @@
 - Restore `Case.formatted_path`.
 - Update serialization error messages.
 - Update documentation links in error messages.
+- Improved failure messages for `ignored_auth`. [#2779](https://github.com/schemathesis/schemathesis/issues/2779) 
+- Do not show the "Missing test data" warning if stateful testing has non-404 responses. [#2795](https://github.com/schemathesis/schemathesis/issues/2795)
+- Restore support for validating `requests` / `httpx` / `werkzeug` responses in `validate_response` and `is_response_valid`.
+- Rename `is_response_valid` to `is_valid_response` for consistency with other functions in the codebase.
 
 ### :bug: Fixed
 
@@ -16,6 +20,7 @@
 - **Pytest**: not using all built-in checks by default.
 - **Pytest**: Ignored `headers` from config file.
 - **Pytest**: Ignored `basic_auth` from config file.
+- **Pytest**: Ignored Hypothesis settings from config file.
 - Make header overrides case-insensitive.
 - Incorrect auth detection in `ignored_auth` when it is passed to `call` or `call_and_validate`. [#2846](https://github.com/schemathesis/schemathesis/issues/2846)
 - Incorrect check for cookie and query param based authorization in `ignored_auth`.

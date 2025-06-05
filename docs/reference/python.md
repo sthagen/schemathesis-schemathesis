@@ -64,6 +64,54 @@ Reference for Schemathesis public Python API.
       - Response
       - Case
       - APIOperation
+      - BaseSchema
+
+Hooks
+~~~~~
+
+.. class:: schemathesis.BaseSchema
+  :noindex:
+
+  All functions above can be accessed via ``schema.hooks.<function-name>`` on a schema instance. Such calls will affect
+  only tests generated from the schema instance. Additionally you can use the following:
+
+  .. method:: schema.hooks.apply
+
+    Register hook to run only on one test function.
+
+    :param hook: A hook function.
+    :param Optional[str] name: A hook name.
+
+    .. code-block:: python
+
+        def before_generate_query(context, strategy):
+            ...
+
+
+        @schema.hooks.apply(before_generate_query)
+        @schema.parametrize()
+        def test_api(case):
+            ...
+
+Schema
+~~~~~~
+
+.. autoclass:: schemathesis.BaseSchema()
+
+  .. automethod:: parametrize
+  .. automethod:: given
+  .. automethod:: as_state_machine
+## Stateful Testing
+
+::: schemathesis.stateful
+    options:
+      heading_level: 3
+      show_root_toc_entry: false
+      show_symbol_type_heading: true
+      signature_crossrefs: true
+      show_labels: true
+      members:
+      - APIStateMachine
 
 ## Hooks
 
