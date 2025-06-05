@@ -20,11 +20,15 @@ nav:
       - guides/targeted.md
       - guides/extending.md
       - guides/extending-cli.md
+      - Hypothesis Strategies: guides/hypothesis-strategies.md
+      - guides/python-apps.md
+      - guides/schema-conformance.md
 
   - Core Contcepts:
       - explanations/data-generation.md
       - explanations/examples.md
       - explanations/stateful.md
+      - Pytest Integration: explanations/pytest.md
 
   - Reference:
       - reference/python.md

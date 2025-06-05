@@ -62,6 +62,8 @@ Reference for Schemathesis public Python API.
       show_labels: true
       members:
       - Response
+      - Case
+      - APIOperation
 
 ## Hooks
 

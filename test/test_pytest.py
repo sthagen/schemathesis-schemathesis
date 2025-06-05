@@ -852,9 +852,9 @@ def test_override(testdir, openapi3_schema_url):
     testdir.make_test(
         f"""
 schema = schemathesis.openapi.from_url('{openapi3_schema_url}')
+schema.config.update(parameters={{"key": "foo", "id": "bar"}})
 
 @schema.include(path_regex="path_variable|custom_format").parametrize()
-@schema.override(path_parameters={{"key": "foo"}}, query={{"id": "bar"}})
 def test(case):
     if not hasattr(case.meta.phase.data, "description"):
         if "key" in case.operation.path_parameters:
@@ -902,19 +902,36 @@ def test(case):
     result.assert_outcomes(passed=1)
 
 
-def test_override_double(testdir):
+def test_config_using_auth(testdir):
     testdir.make_test(
         """
+raw_schema = {
+    "openapi": "3.1.0",
+    "paths": {
+        "/bookings": {
+            "post": {
+                "parameters": [
+                    {
+                        "name": "authorization",
+                        "in": "header",
+                        "required": False,
+                        "schema": {"type": "string"},
+                    }
+                ],
+            }
+        },
+    },
+}
+schema = schemathesis.openapi.from_dict(raw_schema)
+schema.config.update(basic_auth=("test", "test"))
+
 @schema.parametrize()
-@schema.override(path_parameters={"key": "foo"}, query={"id": "bar"})
-@schema.override(path_parameters={"key": "foo"}, query={"id": "bar"})
 def test(case):
-    pass
+    assert case.headers == {"Authorization": "Basic dGVzdDp0ZXN0"}
 """
     )
     result = testdir.runpytest()
-    result.assert_outcomes(errors=1)
-    assert "`test` has already been decorated with `override`" in result.stdout.str()
+    result.assert_outcomes(passed=1)
 
 
 def test_csv_response_validation_direct(testdir, openapi3_base_url):
