@@ -43,6 +43,7 @@ if TYPE_CHECKING:
     import httpx
     import requests
     from hypothesis.strategies import SearchStrategy
+    from requests.structures import CaseInsensitiveDict
     from typing_extensions import Self
     from werkzeug.test import TestResponse
 
@@ -407,7 +408,7 @@ class BaseSchema(Mapping):
         method: str | None = None,
         path: str | None = None,
         path_parameters: dict[str, Any] | None = None,
-        headers: dict[str, Any] | None = None,
+        headers: dict[str, Any] | CaseInsensitiveDict | None = None,
         cookies: dict[str, Any] | None = None,
         query: dict[str, Any] | None = None,
         body: list | dict[str, Any] | str | int | float | bool | bytes | NotSet = NOT_SET,
@@ -763,7 +764,7 @@ class APIOperation(Generic[P]):
         *,
         method: str | None = None,
         path_parameters: dict[str, Any] | None = None,
-        headers: dict[str, Any] | None = None,
+        headers: dict[str, Any] | CaseInsensitiveDict | None = None,
         cookies: dict[str, Any] | None = None,
         query: dict[str, Any] | None = None,
         body: list | dict[str, Any] | str | int | float | bool | bytes | NotSet = NOT_SET,
@@ -782,13 +783,15 @@ class APIOperation(Generic[P]):
             media_type: Override media type.
 
         """
+        from requests.structures import CaseInsensitiveDict
+
         return self.schema.make_case(
             operation=self,
             method=method,
-            path_parameters=path_parameters,
-            headers=headers,
-            cookies=cookies,
-            query=query,
+            path_parameters=path_parameters or {},
+            headers=CaseInsensitiveDict() if headers is None else CaseInsensitiveDict(headers),
+            cookies=cookies or {},
+            query=query or {},
             body=body,
             media_type=media_type,
             meta=_meta,
@@ -810,19 +813,7 @@ class APIOperation(Generic[P]):
             FailureGroup: If the response does not conform to the schema.
 
         """
-        import httpx
-        import requests
-        from werkzeug.test import TestResponse
-
-        if isinstance(response, requests.Response):
-            response_ = Response.from_requests(response, verify=True)
-        elif isinstance(response, httpx.Response):
-            response_ = Response.from_httpx(response, verify=True)
-        elif isinstance(response, TestResponse):
-            response_ = Response.from_wsgi(response)
-        else:
-            response_ = response
-        return self.schema.validate_response(self, response_)
+        return self.schema.validate_response(self, Response.from_any(response))
 
     def is_valid_response(self, response: Response | httpx.Response | requests.Response | TestResponse) -> bool:
         """Check if the provided response is valid against the API schema.

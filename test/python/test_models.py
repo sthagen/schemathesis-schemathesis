@@ -127,7 +127,7 @@ def test_as_transport_kwargs(override, server, base_url, swagger_20, converter):
     assert data == {
         "headers": {**get_default_headers(), "User-Agent": USER_AGENT, SCHEMATHESIS_TEST_CASE_HEADER: ANY},
         "method": "GET",
-        "params": None,
+        "params": {},
         "cookies": {"TOKEN": "secret"},
         "url": f"http://127.0.0.1:{server['port']}/api/success",
     }
@@ -158,7 +158,7 @@ def test_reserved_characters_in_operation_name(swagger_20):
 @pytest.mark.parametrize(
     ("headers", "expected"),
     [
-        (None, {"User-Agent": USER_AGENT, "X-Key": "foo"}),
+        ({}, {"User-Agent": USER_AGENT, "X-Key": "foo"}),
         ({"User-Agent": "foo/1.0"}, {"User-Agent": "foo/1.0", "X-Key": "foo"}),
         ({"X-Value": "bar"}, {"X-Value": "bar", "User-Agent": USER_AGENT, "X-Key": "foo"}),
         ({"UsEr-agEnT": "foo/1.0"}, {"UsEr-agEnT": "foo/1.0", "X-Key": "foo"}),
@@ -166,15 +166,15 @@ def test_reserved_characters_in_operation_name(swagger_20):
 )
 def test_as_transport_kwargs_override_user_agent(server, openapi2_base_url, swagger_20, headers, expected):
     operation = APIOperation("/success", "GET", {}, swagger_20, base_url=openapi2_base_url)
-    original_headers = headers.copy() if headers is not None else headers
+    original_headers = headers.copy()
     case = operation.Case(headers=headers)
     data = case.as_transport_kwargs(headers={"X-Key": "foo"})
     expected[SCHEMATHESIS_TEST_CASE_HEADER] = ANY
     assert data == {
         "headers": {**get_default_headers(), **expected},
         "method": "GET",
-        "params": None,
-        "cookies": None,
+        "params": {},
+        "cookies": {},
         "url": f"http://127.0.0.1:{server['port']}/api/success",
     }
     assert case.headers == original_headers
@@ -206,8 +206,8 @@ def test_as_transport_kwargs_override_content_type(ctx, header):
     assert data == {
         "method": "POST",
         "data": b"<html></html>",
-        "params": None,
-        "cookies": None,
+        "params": {},
+        "cookies": {},
         "headers": {
             **get_default_headers(),
             header: "text/html",
@@ -316,7 +316,7 @@ def test_(case):
     request = requests.PreparedRequest()
     request.prepare("GET", "http://127.0.0.1")
     response.request = request
-    assert case.validate_response(Response.from_requests(response, True)) is None
+    assert case.validate_response(response) is None
 """,
         generation_modes=[GenerationMode.POSITIVE],
     )
@@ -401,6 +401,13 @@ def test_operation_path_suggestion(swagger_20, value, message):
 
 def test_method_suggestion(swagger_20):
     with pytest.raises(LookupError, match="Method `PUT` not found. Available methods: GET"):
+        swagger_20["/users"]["PUT"]
+
+
+def test_method_suggestion_without_parameters(swagger_20):
+    swagger_20.raw_schema["paths"]["/users"]["parameters"] = []
+    swagger_20.raw_schema["paths"]["/users"]["x-ext"] = []
+    with pytest.raises(LookupError, match="Method `PUT` not found. Available methods: GET$"):
         swagger_20["/users"]["PUT"]
 
 
@@ -498,7 +505,8 @@ def test_iter_parameters(ctx):
     assert params[1].name == "q"
 
 
-def test_checks_errors_deduplication(ctx):
+@pytest.mark.parametrize("factory_type", ["httpx", "requests", "wsgi"])
+def test_checks_errors_deduplication(ctx, response_factory, factory_type):
     # See GH-1394
     schema = ctx.openapi.build_schema(
         {
@@ -513,11 +521,7 @@ def test_checks_errors_deduplication(ctx):
     )
     schema = schemathesis.openapi.from_dict(schema)
     case = schema["/data"]["GET"].Case()
-    response = requests.Response()
-    response.status_code = 200
-    response.request = requests.PreparedRequest()
-    response._content = b"42"
-    response.request.prepare(method="GET", url="http://example.com", json={})
+    response = getattr(response_factory, factory_type)(content=b"42", content_type=None)
     # When there are two checks that raise the same failure
     with pytest.raises(FailureGroup) as exc:
         case.validate_response(response, checks=(content_type_conformance, response_schema_conformance))

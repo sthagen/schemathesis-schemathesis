@@ -888,7 +888,7 @@ class MethodMap(Mapping):
         try:
             return self._init_operation(item)
         except LookupError as exc:
-            available_methods = ", ".join(map(str.upper, self))
+            available_methods = ", ".join(key.upper() for key in self if key in HTTP_METHODS)
             message = f"Method `{item.upper()}` not found."
             if available_methods:
                 message += f" Available methods: {available_methods}"
@@ -986,12 +986,6 @@ class SwaggerV20(BaseOpenAPISchema):
     def prepare_multipart(
         self, form_data: dict[str, Any], operation: APIOperation
     ) -> tuple[list | None, dict[str, Any] | None]:
-        """Prepare form data for sending with `requests`.
-
-        :param form_data: Raw generated data as a dictionary.
-        :param operation: The tested API operation for which the data was generated.
-        :return: `files` and `data` values for `requests.request`.
-        """
         files, data = [], {}
         # If there is no content types specified for the request or "application/x-www-form-urlencoded" is specified
         # explicitly, then use it., but if "multipart/form-data" is specified, then use it
@@ -1035,7 +1029,7 @@ class SwaggerV20(BaseOpenAPISchema):
         method: str | None = None,
         path: str | None = None,
         path_parameters: dict[str, Any] | None = None,
-        headers: dict[str, Any] | None = None,
+        headers: dict[str, Any] | CaseInsensitiveDict | None = None,
         cookies: dict[str, Any] | None = None,
         query: dict[str, Any] | None = None,
         body: list | dict[str, Any] | str | int | float | bool | bytes | NotSet = NOT_SET,
@@ -1048,22 +1042,16 @@ class SwaggerV20(BaseOpenAPISchema):
             operation=operation,
             method=method or operation.method.upper(),
             path=path or operation.path,
-            path_parameters=path_parameters,
-            headers=CaseInsensitiveDict(headers) if headers is not None else headers,
-            cookies=cookies,
-            query=query,
+            path_parameters=path_parameters or {},
+            headers=CaseInsensitiveDict() if headers is None else CaseInsensitiveDict(headers),
+            cookies=cookies or {},
+            query=query or {},
             body=body,
             media_type=media_type,
             meta=meta,
         )
 
     def _get_consumes_for_operation(self, definition: dict[str, Any]) -> list[str]:
-        """Get the `consumes` value for the given API operation.
-
-        :param definition: Raw API operation definition.
-        :return: A list of media-types for this operation.
-        :rtype: List[str]
-        """
         global_consumes = self.raw_schema.get("consumes", [])
         consumes = definition.get("consumes", [])
         if not consumes:
@@ -1162,12 +1150,6 @@ class OpenApi30(SwaggerV20):
     def prepare_multipart(
         self, form_data: dict[str, Any], operation: APIOperation
     ) -> tuple[list | None, dict[str, Any] | None]:
-        """Prepare form data for sending with `requests`.
-
-        :param form_data: Raw generated data as a dictionary.
-        :param operation: The tested API operation for which the data was generated.
-        :return: `files` and `data` values for `requests.request`.
-        """
         files = []
         definition = operation.definition.raw
         if "$ref" in definition["requestBody"]:

@@ -1,65 +1,61 @@
 # Architecture
 
-This document outlines the internal structure of Schemathesis for developers working on the core codebase.
+This document outlines the internal structure of Schemathesis for developers working on the codebase.
 
 ## Overview
 
-- **Core**: Foundation layer with no external dependencies
-- **Intermediate**: Hypothesis-powered primitives
-- **Internal subsystems**: Engine, OpenAPI, and GraphQL
-- **Public API**: Curated interface combining functionality from all layers
+
+Schemathesis follows a layered architecture that separates logic into multiple groups:
+
+- **Core Layer**: Framework-agnostic utilities and data structures
+- **Generation Layer**: Hypothesis-powered test case generation and execution
+- **Interface Layer**: CLI, pytest integration, and user-facing APIs
+- **Engine**: Test orchestration, reporting, and execution management
 
 ## Core Layer
 
-Independent utilities that form the foundation of Schemathesis without external dependencies.
-
-### `core/marks`
-
-Attaches Schemathesis-specific metadata to test functions, enabling integration with external testing frameworks (Hypothesis, pytest).
+Framework-agnostic foundation with no external dependencies on testing frameworks.
 
 ### `core/loaders`
+Load and parse API schemas from files, URLs, and applications into internal representations.
 
-Schema loading functionality, supporting multiple sources:
-
-- File-based schemas
-- HTTP-based schema retrieval
-
-### `core/transports`
-
-Network communication primitives for test execution
-
-- Unified response structure
+### `core/transports` 
+Transport abstractions for HTTP communication, providing unified interfaces for different client libraries.
 
 ### `core/output`
+Output formatting, sanitization, and rendering logic for CLI and reporting.
 
-Output processing utilities:
+### `core/marks`
+Metadata attachment system for integrating with external testing frameworks (pytest, unittest).
 
-- Response formatting
-- Data sanitization
+### `core/failures`
+Failure classification and structured error representations for different types of API validation issues.
 
-## Intermediate Layer
+### `core/config`
+Configuration management and validation for project settings and runtime options.
 
-Building blocks for test generation and execution:
+## Generation Layer
+
+Test case generation and execution built on Hypothesis.
 
 ### `generation/hypothesis`
+Integration with Hypothesis framework:
 
-Core test generation machinery:
-
-- Hypothesis test creation
-- Example generation
-- Test execution control
+- Strategy creation from API schemas
+- Test case generation
+- Example collection and management
 
 ### `generation/case`
-
-Defines the `Case` class - the fundamental container for test data that flows through the system.
+The `Case` data structure containing all test data (headers, body, parameters) for API requests.
 
 ### `generation/stateful`
+State machine implementations for testing API operation sequences using OpenAPI links.
 
-State machine implementations for API sequence testing.
+### `checks`
+Built-in validation checks for API responses (schema conformance, status codes, headers).
 
-### `transport`
-
-Higher-level transport implementations building on core primitives.
+### `hooks`
+Extension system for customizing test generation and execution at various lifecycle points.
 
 ## Internal Subsystems
 
@@ -67,17 +63,9 @@ Higher-level transport implementations building on core primitives.
 
 - Test execution orchestration
 - Event system for tracking test progress
-- Testing phases management
+- Test phases management
 
 ### API Specifications
 
 - OpenAPI implementation
 - GraphQL implementation
-
-## Public API
-
-Python API for end users:
-
-- Re-exports from lower layers
-- Common extension points
-- Entry points for running tests

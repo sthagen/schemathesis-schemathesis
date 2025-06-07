@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Mapping
 
 from schemathesis.checks import CHECKS, CheckContext, CheckFunction, run_checks
@@ -14,10 +14,19 @@ from schemathesis.hooks import HookContext, dispatch
 from schemathesis.transport.prepare import prepare_path, prepare_request
 
 if TYPE_CHECKING:
+    import httpx
+    import requests
     import requests.auth
     from requests.structures import CaseInsensitiveDict
+    from werkzeug.test import TestResponse
 
     from schemathesis.schemas import APIOperation
+
+
+def _default_headers() -> CaseInsensitiveDict:
+    from requests.structures import CaseInsensitiveDict
+
+    return CaseInsensitiveDict()
 
 
 @dataclass
@@ -29,30 +38,93 @@ class Case:
     """HTTP verb (`GET`, `POST`, etc.)"""
     path: str
     """Path template from schema (e.g., `/users/{user_id}`)"""
-    id: str = field(default_factory=generate_random_case_id, compare=False)
+    id: str
     """Random ID sent in headers for log correlation"""
-    path_parameters: dict[str, Any] | None = None
+    path_parameters: dict[str, Any]
     """Generated path variables (e.g., `{"user_id": "123"}`)"""
-    headers: CaseInsensitiveDict | None = None
+    headers: CaseInsensitiveDict
     """Generated HTTP headers"""
-    cookies: dict[str, Any] | None = None
+    cookies: dict[str, Any]
     """Generated cookies"""
-    query: dict[str, Any] | None = None
+    query: dict[str, Any]
     """Generated query parameters"""
     # By default, there is no body, but we can't use `None` as the default value because it clashes with `null`
     # which is a valid payload.
-    body: list | dict[str, Any] | str | int | float | bool | bytes | NotSet = NOT_SET
+    body: list | dict[str, Any] | str | int | float | bool | bytes | NotSet
     """Generated request body"""
-    media_type: str | None = None
+    media_type: str | None
     """Media type from OpenAPI schema (e.g., "multipart/form-data")"""
 
-    meta: CaseMetadata | None = field(compare=False, default=None)
+    meta: CaseMetadata | None
 
-    _auth: requests.auth.AuthBase | None = None
-    _has_explicit_auth: bool = False
+    _auth: requests.auth.AuthBase | None
+    _has_explicit_auth: bool
 
-    def __post_init__(self) -> None:
+    __slots__ = (
+        "operation",
+        "method",
+        "path",
+        "id",
+        "path_parameters",
+        "headers",
+        "cookies",
+        "query",
+        "body",
+        "media_type",
+        "meta",
+        "_auth",
+        "_has_explicit_auth",
+        "_components",
+    )
+
+    def __init__(
+        self,
+        operation: APIOperation,
+        method: str,
+        path: str,
+        *,
+        id: str | None = None,
+        path_parameters: dict[str, Any] | None = None,
+        headers: CaseInsensitiveDict | None = None,
+        cookies: dict[str, Any] | None = None,
+        query: dict[str, Any] | None = None,
+        body: list | dict[str, Any] | str | int | float | bool | bytes | "NotSet" = NOT_SET,
+        media_type: str | None = None,
+        meta: CaseMetadata | None = None,
+        _auth: requests.auth.AuthBase | None = None,
+        _has_explicit_auth: bool = False,
+    ) -> None:
+        self.operation = operation
+        self.method = method
+        self.path = path
+
+        self.id = id if id is not None else generate_random_case_id()
+        self.path_parameters = path_parameters if path_parameters is not None else {}
+        self.headers = headers if headers is not None else _default_headers()
+        self.cookies = cookies if cookies is not None else {}
+        self.query = query if query is not None else {}
+        self.body = body
+        self.media_type = media_type
+        self.meta = meta
+        self._auth = _auth
+        self._has_explicit_auth = _has_explicit_auth
         self._components = store_components(self)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Case):
+            return NotImplemented
+
+        return (
+            self.operation == other.operation
+            and self.method == other.method
+            and self.path == other.path
+            and self.path_parameters == other.path_parameters
+            and self.headers == other.headers
+            and self.cookies == other.cookies
+            and self.query == other.query
+            and self.body == other.body
+            and self.media_type == other.media_type
+        )
 
     @property
     def _override(self) -> Override:
@@ -63,6 +135,8 @@ class Case:
         first = True
         for name in ("path_parameters", "headers", "cookies", "query", "body"):
             value = getattr(self, name)
+            if name != "body" and not value:
+                continue
             if value is not None and not isinstance(value, NotSet):
                 if first:
                     first = False
@@ -142,7 +216,7 @@ class Case:
 
     def validate_response(
         self,
-        response: Response,
+        response: Response | httpx.Response | requests.Response | TestResponse,
         checks: list[CheckFunction] | None = None,
         additional_checks: list[CheckFunction] | None = None,
         excluded_checks: list[CheckFunction] | None = None,
@@ -162,6 +236,8 @@ class Case:
         """
         __tracebackhide__ = True
         from requests.structures import CaseInsensitiveDict
+
+        response = Response.from_any(response)
 
         checks = [
             check
