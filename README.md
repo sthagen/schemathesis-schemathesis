@@ -87,26 +87,20 @@ Used by teams at **[Spotify](https://github.com/backstage/backstage)**, **[WordP
 
 ## Documentation
 
-📚 **[Complete documentation](https://schemathesis.readthedocs.io/en/latest/)** with guides, examples, and API reference.
-
-> **Note:** See also [docs](https://schemathesis.readthedocs.io/en/stable/) for the stable V3 release
+📚 **[Complete documentation](https://schemathesis.readthedocs.io/en/stable/)** with guides, examples, and API reference.
 
 ## Get Help
 
 - 💬 [Discord community](https://discord.gg/R9ASRAmHnA)
-- 🐛 [GitHub issues](https://github.com/schemathesis/schemathesis/issues)  
+- 🐛 [GitHub issues](https://github.com/schemathesis/schemathesis/issues)
 
 ## Contributing
 
-We welcome contributions! See our [contributing guidelines](CONTRIBUTING.rst) and join discussions in [issues](https://github.com/schemathesis/schemathesis/issues) or [Discord](https://discord.gg/R9ASRAmHnA).
+We welcome contributions! See our [contributing guidelines](CONTRIBUTING.md) and join discussions in [issues](https://github.com/schemathesis/schemathesis/issues) or [Discord](https://discord.gg/R9ASRAmHnA).
 
 ## Acknowledgements
 
 Schemathesis is built on top of <a href="https://hypothesis.works/" target="_blank">Hypothesis</a>, a powerful property-based testing library for Python.
-
----
-
-> **Note:** This is the V4 development branch. For the stable release, see [V3](https://github.com/schemathesis/schemathesis/tree/v3).
 
 ## License
 
