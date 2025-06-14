@@ -159,34 +159,23 @@ class OperationsConfig(DiffBase):
         if exclude_deprecated:
             exclude_set.include(is_deprecated)
 
-        # Also update operations list for consistency with config structure
-        if not include_set.is_empty():
-            self.operations.insert(0, OperationConfig(filter_set=include_set, enabled=True))
-        if not exclude_set.is_empty():
-            self.operations.insert(0, OperationConfig(filter_set=exclude_set, enabled=False))
+        operations = list(self.operations)
 
         final = FilterSet()
 
-        # Get a stable reference to operations
-        operations = list(self.operations)
-
-        # Define a closure that implements our priority logic
         def priority_filter(ctx: HasAPIOperation) -> bool:
             """Filter operations according to CLI and config priority."""
-            # 1. CLI includes override everything if present
-            if not include_set.is_empty():
-                return include_set.match(ctx)
-
-            # 2. CLI excludes take precedence over config
-            if not exclude_set.is_empty() and exclude_set.match(ctx):
-                return False
-
-            # 3. Check config operations in priority order (first match wins)
             for op_config in operations:
-                if op_config._filter_set.match(ctx):
-                    return op_config.enabled
+                if op_config._filter_set.match(ctx) and not op_config.enabled:
+                    return False
 
-            # 4. Default to include if no rule matches
+            if not include_set.is_empty():
+                if exclude_set.is_empty():
+                    return include_set.match(ctx)
+                return include_set.match(ctx) and not exclude_set.match(ctx)
+            elif not exclude_set.is_empty():
+                return not exclude_set.match(ctx)
+
             return True
 
         # Add our priority function as the filter
@@ -278,24 +267,30 @@ class OperationConfig(DiffBase):
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> OperationConfig:
         filter_set = FilterSet()
+        seen = set()
         for key_suffix, arg_suffix in (("", ""), ("-regex", "_regex")):
             for attr, arg_name in FILTER_ATTRIBUTES:
                 key = f"include-{attr}{key_suffix}"
                 if key in data:
+                    seen.add(key)
                     with reraise_filter_error(attr):
                         filter_set.include(**{f"{arg_name}{arg_suffix}": data[key]})
                 key = f"exclude-{attr}{key_suffix}"
                 if key in data:
+                    seen.add(key)
                     with reraise_filter_error(attr):
                         filter_set.exclude(**{f"{arg_name}{arg_suffix}": data[key]})
         for key, method in (("include-by", filter_set.include), ("exclude-by", filter_set.exclude)):
             if key in data:
+                seen.add(key)
                 expression = data[key]
                 try:
                     func = expression_to_filter_function(expression)
                     method(func)
                 except ValueError:
                     raise ConfigError(f"Invalid filter expression: '{expression}'") from None
+        if not set(data) - seen:
+            raise ConfigError("Operation filters defined, but no settings are being overridden")
 
         return cls(
             filter_set=filter_set,

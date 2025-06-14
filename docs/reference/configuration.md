@@ -46,7 +46,11 @@ exclude-method = "POST"
 # include-tag = "admin"
 # By Open API operation ID
 # include-operation-id = "delete-user"
+enabled = false
 ```
+
+!!! note "Applying filters"
+    The config above will disable all operations matching the set of filters.
 
 ## Parameter Overrides
 
