@@ -1,6 +1,17 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.0.2...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.0.3...HEAD) - TBD
+
+## [4.0.3](https://github.com/schemathesis/schemathesis/compare/v4.0.2...v4.0.3) - 2025-06-30
+
+### :wrench: Changed
+
+- **Pytest**: Cleaner error reporting for Schema-related errors (like unknown media type).
+
+### :bug: Fixed
+
+- **Pytest**: Issue where enabling or disabling checks via the config file had no effect.
+- **Pytest**: Ignored `tls-verify`, `request-timeout`, `request-cert`, and `request-cert-key` options supplied via the config file.
 
 ## [4.0.2](https://github.com/schemathesis/schemathesis/compare/v4.0.1...v4.0.2) - 2025-06-15
 
