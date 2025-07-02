@@ -1,10 +1,21 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.0.3...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.0.4...HEAD) - TBD
+
+### :wrench: Changed
+
+- Improve error messages for `negative_data_rejection` and `positive_data_acceptance` checks.
+
+## [4.0.4](https://github.com/schemathesis/schemathesis/compare/v4.0.3...v4.0.4) - 2025-07-02
+
+### :wrench: Changed
+
+- Show cURL commands on network timeouts.
 
 ### :bug: Fixed
 
 - Empty path parameter in the negative tests. [#2912](https://github.com/schemathesis/schemathesis/issues/2912)
+- Generating negative test cases where query parameters do not appear in the resulting URL making them positive. [#2900](https://github.com/schemathesis/schemathesis/issues/2900)
 
 ## [4.0.3](https://github.com/schemathesis/schemathesis/compare/v4.0.2...v4.0.3) - 2025-06-30
 
