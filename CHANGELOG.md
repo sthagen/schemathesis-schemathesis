@@ -1,10 +1,16 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.0.4...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.0.5...HEAD) - TBD
+
+## [4.0.5](https://github.com/schemathesis/schemathesis/compare/v4.0.4...v4.0.5) - 2025-07-04
 
 ### :wrench: Changed
 
 - Improve error messages for `negative_data_rejection` and `positive_data_acceptance` checks.
+
+### :bug: Fixed
+
+- Ignoring some string formats during positive test case generation in the coverage phase. [#2930](https://github.com/schemathesis/schemathesis/issues/2930) 
 
 ## [4.0.4](https://github.com/schemathesis/schemathesis/compare/v4.0.3...v4.0.4) - 2025-07-02
 
