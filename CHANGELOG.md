@@ -1,6 +1,16 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.0.6...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.0.7...HEAD) - TBD
+
+## [4.0.7](https://github.com/schemathesis/schemathesis/compare/v4.0.6...v4.0.7) - 2025-07-08
+
+### :rocket: Added
+
+- Support for `application/yaml` media type.
+
+### :wrench: Changed
+
+- Validate schema of YAML response.
 
 ## [4.0.6](https://github.com/schemathesis/schemathesis/compare/v4.0.5...v4.0.6) - 2025-07-07
 
@@ -10,7 +20,7 @@
 
 ### :wrench: Changed
 
-- Consider connection error as a failed API probe. [#2935](https://github.com/schemathesis/schemathesis/issues/2935)  
+- Consider connection error as a failed API probe. [#2935](https://github.com/schemathesis/schemathesis/issues/2935)
 
 ## [4.0.5](https://github.com/schemathesis/schemathesis/compare/v4.0.4...v4.0.5) - 2025-07-04
 
