@@ -1,10 +1,13 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.0.9...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.0.10...HEAD) - TBD
+
+## [4.0.10](https://github.com/schemathesis/schemathesis/compare/v4.0.9...v4.0.10) - 2025-07-17
 
 ### :bug: Fixed
 
 - Negative test cases with invalid query parameters mistakenly becoming positive test cases.
+- Support `x-examples` as a list for Open API 2.0.
 
 ### :wrench: Changed
 
@@ -103,6 +106,8 @@
 ## [4.0.0](https://github.com/schemathesis/schemathesis/compare/v4.0.0-beta.1...v4.0.0) - 2025-06-10
 
 This release only includes documentation & URLs updates.
+
+Check the [Migration Guide](https://github.com/schemathesis/schemathesis/blob/master/MIGRATION.md) for key changes.
 
 ## [4.0.0-beta.1](https://github.com/schemathesis/schemathesis/compare/v4.0.0-alpha.12...v4.0.0-beta.1) - 2025-06-07
 
