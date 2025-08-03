@@ -8,7 +8,7 @@ Schemathesis dev
  ✅  Loaded specification from /tmp/schema.json (in 0.00s)
 
      Base URL:         http://127.0.0.1/api
-     Specification:    Open API 3.0.2
+     Specification:    Open API 2.0
      Operations:       1 selected / 1 total
 
 
@@ -24,32 +24,26 @@ Schemathesis dev
 
      ❌ 1 failed
 
- ❌  Fuzzing (in 0.00s)
+ ✅  Fuzzing (in 0.00s)
 
-     ❌ 1 failed
+     ✅ 1 passed
 
 =================================== FAILURES ===================================
-__________________________________ GET /test ___________________________________
+__________________________________ GET /basic __________________________________
 1. Test Case ID: <PLACEHOLDER>
 
-- Rejected positive data
+- Undocumented HTTP status code
 
-    Allowed statuses: 403
+    Received: 401
+    Documented: 200
 
-[404] Not Found:
+[401] Unauthorized:
 
-    `404: Not Found`
+    `{"detail": "Unauthorized"}`
 
 Reproduce with:
 
-    curl -X GET http://127.0.0.1/api/test
-
-================================= EXPERIMENTS ==================================
-
-🧪 Positive Data Acceptance: Verifying schema-conformant data is accepted
-   Feedback: https://github.com/schemathesis/schemathesis/discussions/2499
-
-Your feedback is crucial for experimental features. Please visit the provided URL(s) to share your thoughts.
+    curl -X GET http://127.0.0.1/api/basic
 
 =================================== SUMMARY ====================================
 
@@ -58,17 +52,16 @@ API Operations:
   Tested: 1
 
 Test Phases:
-  ✅ API probing
   ⏭  Examples
   ❌ Coverage
-  ❌ Fuzzing
+  ✅ Fuzzing
   ⏭  Stateful (not applicable)
 
 Failures:
-  ❌ Rejected positive data: 1
+  ❌ Undocumented HTTP status code: 1
 
 Test cases:
-  N generated, N found N unique failures
+  N generated, N found N unique failures, N skipped
 
 Seed: 42
 

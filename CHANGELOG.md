@@ -1,6 +1,46 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.0.15...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.0.19...HEAD) - TBD
+
+## [4.0.19](https://github.com/schemathesis/schemathesis/compare/v4.0.18...v4.0.19) - 2025-08-03
+
+### :bug: Fixed
+
+- `AttributeError` during response conformance checks if the response schema contains an error in `properties` definition.
+
+### :wrench: Changed
+
+- Report schema errors in response definitions.
+
+## [4.0.18](https://github.com/schemathesis/schemathesis/compare/v4.0.17...v4.0.18) - 2025-08-02
+
+### :bug: Fixed
+
+- Correctly merge quantifiers into regular expressions with anchors and a single literal.
+- Internal error if a parameter schema contains `required` with a boolean value instead of an array.
+
+### :wrench: Changed
+
+- Do not show excessive warnings about unsupported regex in CLI during the coverage phase.
+
+## [4.0.17](https://github.com/schemathesis/schemathesis/compare/v4.0.16...v4.0.17) - 2025-08-02
+
+### :bug: Fixed
+
+- Generating negative test cases incorrectly marked as invalid if `anyOf` or `oneOf` are present. [#2975](https://github.com/schemathesis/schemathesis/issues/2975)
+- Set correct data generation mode for stateful test cases if after adding stateful data, a negative test case becomes positive. [#2983](https://github.com/schemathesis/schemathesis/issues/2983) 
+
+## [4.0.16](https://github.com/schemathesis/schemathesis/compare/v4.0.15...v4.0.16) - 2025-07-31
+
+### :bug: Fixed
+
+- Internal error if the stateful phase is used with `--generation-unique-inputs`. [#2977](https://github.com/schemathesis/schemathesis/issues/2977)
+- Do not show auth headers for cases when the test case was sent specifically without auth.
+- Do not show unnecessary auth warning if the only test that happened was for missing auth.
+
+### :wrench: Changed
+
+- Improve wording for authentication-related warning.
 
 ## [4.0.15](https://github.com/schemathesis/schemathesis/compare/v4.0.14...v4.0.15) - 2025-07-26
 

@@ -1873,6 +1873,58 @@ def failed(ctx, response, case):
         )
 
 
+def test_missing_authorization(ctx, cli, snapshot_cli, openapi3_base_url):
+    # The reproduction code should not contain auth if it is explicitly specified
+    schema_path = ctx.openapi.write_schema(
+        {"/failure": {"get": {"security": [{"ApiKeyAuth": None}]}}},
+        version="2.0",
+        securityDefinitions={"ApiKeyAuth": {"type": "apiKey", "name": "Authorization", "in": "header"}},
+    )
+    assert (
+        cli.main(
+            "run",
+            str(schema_path),
+            "-c",
+            "not_a_server_error",
+            f"--url={openapi3_base_url}",
+            "--header=Authorization: Bearer SECRET",
+            "--phases=coverage",
+            "--mode=negative",
+        )
+        == snapshot_cli
+    )
+
+
+def test_unnecessary_auth_warning(ctx, cli, snapshot_cli, openapi3_base_url):
+    # If a test for missing Authorization is the only thing that happen, there should be no warning for missing Authorization header
+    schema_path = ctx.openapi.write_schema(
+        {
+            "/basic": {
+                "get": {
+                    "security": [{"Basic": None}],
+                    "responses": {
+                        "200": {
+                            "description": "Ok",
+                        }
+                    },
+                }
+            }
+        },
+        version="2.0",
+        securityDefinitions={"Basic": {"type": "basic", "name": "Authorization", "in": "header"}},
+    )
+    assert (
+        cli.main(
+            "run",
+            str(schema_path),
+            f"--url={openapi3_base_url}",
+            "--header=Authorization: Basic dGVzdDp0ZXN0",
+            "--max-examples=5",
+        )
+        == snapshot_cli
+    )
+
+
 @pytest.mark.openapi_version("3.0")
 def test_nested_parameters(ctx):
     schema = ctx.openapi.build_schema(
