@@ -1,6 +1,20 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.0.19...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.0.21...HEAD) - TBD
+
+## [4.0.21](https://github.com/schemathesis/schemathesis/compare/v4.0.20...v4.0.21) - 2025-08-04
+
+### :wrench: Changed
+
+- Disable Hypothesis-level deadline for all Schemathesis tests.
+
+## [4.0.20](https://github.com/schemathesis/schemathesis/compare/v4.0.19...v4.0.20) - 2025-08-04
+
+### :bug: Fixed
+
+- Internal error in the `ignored_auth` check in ASGI/WSGI integration.
+- Handle octal escapes during updating quantifiers in regular expressions.
+- Handle nested match groups during updating quantifiers in regular expressions.
 
 ## [4.0.19](https://github.com/schemathesis/schemathesis/compare/v4.0.18...v4.0.19) - 2025-08-03
 
