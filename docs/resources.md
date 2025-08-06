@@ -1,6 +1,16 @@
 # External Resources
 
-This page collects articles, papers, videos, and tutorials about Schemathesis written by the community. These resources provide additional perspectives, use cases, and implementation examples.
+This page collects articles, papers, videos, tutorials, and integrations about Schemathesis written by the community. These resources provide additional perspectives, use cases, and implementation examples.
+
+## Integrations
+
+- [Robot Framework SchemathesisLibrary](https://github.com/aaltat/robotframework-schemathesis) by **@aaltat**
+
+    - **Description**: Robot Framework integration with Schemathesis. Automatically generates test cases from OpenAPI/GraphQL schemas using DataDriver integration.
+
+    - **Documentation**: [Keyword documentation](https://aaltat.github.io/robotframework-schemathesis/SchemathesisLibrary.html)
+
+    - **Installation**: `pip install robotframework-schemathesislibrary`
 
 ## Papers
 
@@ -25,6 +35,12 @@ This page collects articles, papers, videos, and tutorials about Schemathesis wr
     - **Date**: 15 Oct 2023
 
 ## Articles
+
+- [Introduction to Schemathesis: A Tool for Automatic Test Data Generation for Web APIs](https://gihyo.jp/article/2025/07/monthly-python-2507) (in Japanese) by **@ryu22e**
+
+    - **Description**: A great introduction to Schemathesis 4 that covers both CLI usage and pytest integration with many practical examples.
+
+    - **Date**: Jul 2025
 
 - [Create a Cracker of an Open API Contract with VS Code, Spectral, Prism and Schemathesis](https://blog.hungovercoders.com/datagriff/2023/12/22/create-a-cracker-of-an-open-api-contract-with-vs-code-spectral-prism-and-schemathesis.html) by **@dataGriff**
 
