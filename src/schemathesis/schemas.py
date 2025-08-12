@@ -545,10 +545,6 @@ class Parameter:
         """Whether the parameter is required for a successful API call."""
         raise NotImplementedError
 
-    def serialize(self, operation: APIOperation) -> str:
-        """Get parameter's string representation."""
-        raise NotImplementedError
-
 
 P = TypeVar("P", bound=Parameter)
 
@@ -620,7 +616,7 @@ class OperationDefinition(Generic[D]):
     def _repr_pretty_(self, *args: Any, **kwargs: Any) -> None: ...
 
 
-@dataclass(eq=False)
+@dataclass()
 class APIOperation(Generic[P]):
     """An API operation (e.g., `GET /users`)."""
 
@@ -646,6 +642,14 @@ class APIOperation(Generic[P]):
 
     def __deepcopy__(self, memo: dict) -> APIOperation[P]:
         return self
+
+    def __hash__(self) -> int:
+        return hash(self.label)
+
+    def __eq__(self, value: object, /) -> bool:
+        if not isinstance(value, APIOperation):
+            return NotImplemented
+        return self.label == value.label
 
     @property
     def full_path(self) -> str:
