@@ -119,6 +119,10 @@
     "rate-limit": {
       "type": "string"
     },
+    "max-redirects": {
+      "type": "integer",
+      "minimum": 0
+    },
     "request-timeout": {
       "type": "number",
       "minimum": 0
@@ -251,6 +255,9 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
         "examples": {
           "$ref": "#/$defs/ExamplesPhaseConfig"
         },
@@ -523,6 +530,10 @@
         "rate-limit": {
           "type": "string"
         },
+        "max-redirects": {
+          "type": "integer",
+          "minimum": 0
+        },
         "request-timeout": {
           "type": "number",
           "minimum": 0
@@ -589,6 +600,10 @@
         },
         "rate-limit": {
           "type": "string"
+        },
+        "max-redirects": {
+          "type": "integer",
+          "minimum": 0
         },
         "request-timeout": {
           "type": "number",
