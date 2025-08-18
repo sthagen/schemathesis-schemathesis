@@ -1,16 +1,20 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.0.26...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.1.0...HEAD) - TBD
+
+## [4.1.0](https://github.com/schemathesis/schemathesis/compare/v4.0.26...v4.1.0) - 2025-08-17
 
 ### :rocket: Added
 
+- **Automatic Link Inference**: Schemathesis now automatically generates OpenAPI links by analyzing `Location` headers from API responses. [#2953](https://github.com/schemathesis/schemathesis/issues/2953) 
 - `--max-redirects` CLI & config file option. [#712](https://github.com/schemathesis/schemathesis/issues/712)
 - `enabled` config file option to disable all test phases. [#2951](https://github.com/schemathesis/schemathesis/issues/2951)
+- Support PyPy3 on best effort basis without running tests in CI due to long running time. [#1079](https://github.com/schemathesis/schemathesis/issues/1079)
 
 ### :bug: Fixed
 
 - Ignored `codec` for header generation.
-- Property try to load schema as YAML if the `Content-Type` header is unknown.
+- Properly try to load schema as YAML if the `Content-Type` header is unknown.
 
 ### :wrench: Changed
 
