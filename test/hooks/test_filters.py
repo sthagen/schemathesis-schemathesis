@@ -28,6 +28,10 @@ def test_invalid_hook(request, dispatcher_factory, register):
 
     assert str(exc_info.value) == "Filters are not applicable to this hook: `before_process_path`"
 
+    # Invalid hooks should not mutate global state
+    with pytest.raises(ValueError) as exc_info:
+        register(dispatcher)
+
 
 @pytest.mark.openapi_version("3.0")
 @pytest.mark.operations("payload")
@@ -73,10 +77,45 @@ def test_simple_filter(schema_url, is_include):
     test()
 
 
+@pytest.mark.operations("success")
+def test_map_case_filter(ctx, cli, openapi3_schema_url, snapshot_cli):
+    # All these hooks should not be called because of the applied filter
+    with ctx.hook(
+        r"""
+@schemathesis.hook.apply_to(path_regex=r"/fake/path")
+def map_case(ctx, case):
+    1 / 0
+
+@schemathesis.hook.apply_to(path_regex=r"/fake/path")
+def filter_case(ctx, case):
+    1 / 0
+
+@schemathesis.hook.apply_to(path_regex=r"/fake/path")
+def flatmap_case(ctx, case):
+    1 / 0
+
+@schemathesis.hook.apply_to(path_regex=r"/fake/path")
+def before_generate_case(ctx, case):
+    1 / 0
+
+
+try:
+    @schemathesis.hook("before_process_path").apply_to(method="GET")
+    def custom_name(context, path, methods):
+        pass
+except:
+    pass
+"""
+    ) as module:
+        assert (
+            cli.main("run", openapi3_schema_url, "--phases=fuzzing", "--max-examples=1", hooks=module) == snapshot_cli
+        )
+
+
 def multiple_skip_for(schema):
     exec("""
 @schema.hook.skip_for(name="first").skip_for(name="second")
-def map_body(context, body):
+def map_body(ctx, body):
     return 42
     """)
 
@@ -84,7 +123,7 @@ def map_body(context, body):
 def multiple_apply_to(schema):
     exec("""
 @schema.hook.apply_to(method="POST").apply_to(path="/api/payload")
-def map_body(context, body):
+def map_body(ctx, body):
     return 42
     """)
 

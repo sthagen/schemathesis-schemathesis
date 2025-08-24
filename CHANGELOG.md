@@ -1,14 +1,19 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.1.0...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.1.1...HEAD) - TBD
+
+## [4.1.1](https://github.com/schemathesis/schemathesis/compare/v4.1.0...v4.1.1) - 2025-08-23
 
 ### :bug: Fixed
 
 - False positives in `use_after_free` check when validation errors occur before resource existence checks.
+- Ignored `apply_to` and `skip_for` filters in `map_case`, `filter_case`, `flatmap_case`, and `before_generate_case` hooks.
+- Resetting hook filters in case of suppressed errors during hook registration.
 
 ### :wrench: Changed
 
-- Display all cURL commands for stateful failures
+- Display all cURL commands for stateful failures.
+- Inject unconstrained path parameters when missing in the operation definition (schema error still reported).
 
 ## [4.1.0](https://github.com/schemathesis/schemathesis/compare/v4.0.26...v4.1.0) - 2025-08-17
 
