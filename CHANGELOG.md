@@ -1,6 +1,12 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.1.3...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.1.4...HEAD) - TBD
+
+## [4.1.4](https://github.com/schemathesis/schemathesis/compare/v4.1.3...v4.1.4) - 2025-09-01
+
+### :bug: Fixed
+
+- Generating empty path parameters during the coverage phase leading to false negative response schema conformance failures.
 
 ## [4.1.3](https://github.com/schemathesis/schemathesis/compare/v4.1.2...v4.1.3) - 2025-08-28
 
