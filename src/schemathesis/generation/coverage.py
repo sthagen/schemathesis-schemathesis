@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from functools import lru_cache, partial
 from itertools import combinations
 
+from schemathesis.core.jsonschema import references
+
 try:
     from json.encoder import _make_iterencode  # type: ignore[attr-defined]
 except ImportError:
@@ -25,7 +27,7 @@ import jsonschema.protocols
 from hypothesis import strategies as st
 from hypothesis.errors import InvalidArgument, Unsatisfiable
 from hypothesis_jsonschema import from_schema
-from hypothesis_jsonschema._canonicalise import canonicalish
+from hypothesis_jsonschema._canonicalise import HypothesisRefResolutionError, canonicalish
 from hypothesis_jsonschema._from_schema import STRING_FORMATS as BUILT_IN_STRING_FORMATS
 
 from schemathesis.core import INTERNAL_BUFFER_SIZE, NOT_SET
@@ -129,6 +131,7 @@ class CoverageContext:
     custom_formats: dict[str, st.SearchStrategy]
     validator_cls: type[jsonschema.protocols.Validator]
     _resolver: RefResolver | None
+    _resolution_scopes: list[str] | None
 
     __slots__ = (
         "root_schema",
@@ -139,6 +142,7 @@ class CoverageContext:
         "custom_formats",
         "validator_cls",
         "_resolver",
+        "_resolution_scopes",
     )
 
     def __init__(
@@ -152,6 +156,7 @@ class CoverageContext:
         custom_formats: dict[str, st.SearchStrategy],
         validator_cls: type[jsonschema.protocols.Validator],
         _resolver: RefResolver | None = None,
+        _resolution_scopes: list[str] | None = None,
     ) -> None:
         self.root_schema = root_schema
         self.location = location
@@ -161,6 +166,7 @@ class CoverageContext:
         self.custom_formats = custom_formats
         self.validator_cls = validator_cls
         self._resolver = _resolver
+        self._resolution_scopes = _resolution_scopes or []
 
     @property
     def resolver(self) -> RefResolver:
@@ -173,6 +179,16 @@ class CoverageContext:
         """Resolve a $ref to its schema definition."""
         _, resolved = self.resolver.resolve(ref)
         return resolved
+
+    @contextmanager
+    def resolving(self, ref: str) -> Generator[tuple[bool, dict | bool]]:
+        assert isinstance(self._resolution_scopes, list)
+        is_recursive = ref in self._resolution_scopes
+        self._resolution_scopes.append(ref)
+        try:
+            yield is_recursive, self.resolve_ref(ref)
+        finally:
+            self._resolution_scopes.pop()
 
     @contextmanager
     def at(self, key: str | int) -> Generator[None, None, None]:
@@ -196,6 +212,7 @@ class CoverageContext:
             custom_formats=self.custom_formats,
             validator_cls=self.validator_cls,
             _resolver=self._resolver,
+            _resolution_scopes=self._resolution_scopes,
         )
 
     def with_negative(self) -> CoverageContext:
@@ -208,6 +225,7 @@ class CoverageContext:
             custom_formats=self.custom_formats,
             validator_cls=self.validator_cls,
             _resolver=self._resolver,
+            _resolution_scopes=self._resolution_scopes,
         )
 
     def is_valid_for_location(self, value: Any) -> bool:
@@ -243,9 +261,15 @@ class CoverageContext:
     def generate_from(self, strategy: st.SearchStrategy) -> Any:
         return cached_draw(strategy)
 
-    def generate_from_schema(self, schema: dict | bool) -> Any:
+    def generate_from_schema(self, schema: dict | bool, *, seen_references: set[str] | None = None) -> Any:
         if isinstance(schema, dict) and "$ref" in schema:
-            schema = self.resolve_ref(schema["$ref"])
+            reference = schema["$ref"]
+            seen_references = seen_references or set()
+            if reference in seen_references:
+                sanitize_references(schema, reference)
+            seen_references.add(reference)
+            # Deep clone to avoid circular references in Python objects
+            schema = deepclone(self.resolve_ref(reference))
         if isinstance(schema, bool):
             return 0
         keys = sorted([k for k in schema if not k.startswith("x-") and k not in ["description", "example", "examples"]])
@@ -269,7 +293,7 @@ class CoverageContext:
                 if isinstance(sub_schema, dict) and "const" in sub_schema:
                     obj[key] = sub_schema["const"]
                 else:
-                    obj[key] = self.generate_from_schema(sub_schema)
+                    obj[key] = self.generate_from_schema(sub_schema, seen_references=seen_references)
             return obj
         if (
             keys == ["maximum", "minimum", "type"] or keys == ["maximum", "type"] or keys == ["minimum", "type"]
@@ -323,9 +347,16 @@ class CoverageContext:
 
             schema = canonicalish(schema)
             if isinstance(schema, dict) and "allOf" not in schema:
-                return self.generate_from_schema(schema)
+                return self.generate_from_schema(schema, seen_references=seen_references)
 
         return self.generate_from(from_schema(schema, custom_formats=self.custom_formats))
+
+
+def sanitize_references(schema: dict[str, Any], reference: str) -> None:
+    # Try to remove recursive references to avoid infinite recursion
+    remaining_references = references.sanitize(schema)
+    if reference in remaining_references:
+        raise HypothesisRefResolutionError(f"Required reference {reference} creates cycle")
 
 
 T = TypeVar("T")
@@ -456,13 +487,20 @@ def cover_schema_iter(
         seen = HashSet()
 
     if isinstance(schema, dict) and "$ref" in schema:
-        resolved = ctx.resolve_ref(schema["$ref"])
-        if isinstance(resolved, dict):
-            schema = {**resolved, **{k: v for k, v in schema.items() if k != "$ref"}}
-            yield from cover_schema_iter(ctx, schema, seen)
-        else:
-            yield from cover_schema_iter(ctx, resolved, seen)
-        return
+        reference = schema["$ref"]
+        try:
+            with ctx.resolving(reference) as (is_recursive, resolved):
+                if isinstance(resolved, dict):
+                    schema = {**resolved, **{k: v for k, v in schema.items() if k != "$ref"}}
+                    if is_recursive:
+                        sanitize_references(schema, reference)
+                    yield from cover_schema_iter(ctx, schema, seen)
+                else:
+                    yield from cover_schema_iter(ctx, resolved, seen)
+                return
+        except RefResolutionError:
+            # Can't resolve a reference - at this point, we can't generate anything useful as `$ref` is in the current schema root
+            return
 
     if schema == {} or schema is True:
         types = ["null", "boolean", "string", "number", "array", "object"]

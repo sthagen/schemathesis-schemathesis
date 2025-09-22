@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Iterable
 
-from schemathesis.core.bundler import BUNDLE_STORAGE_KEY
 from schemathesis.core.errors import InvalidSchema
+from schemathesis.core.jsonschema import BUNDLE_STORAGE_KEY
 from schemathesis.schemas import Parameter
 
 from .converter import to_json_schema_recursive
@@ -23,11 +23,6 @@ class OpenAPIParameter(Parameter):
     supported_jsonschema_keywords: ClassVar[tuple[str, ...]]
 
     def _repr_pretty_(self, *args: Any, **kwargs: Any) -> None: ...
-
-    @property
-    def description(self) -> str | None:
-        """A brief parameter description."""
-        return self.definition.get("description")
 
     @property
     def location(self) -> str:
@@ -264,7 +259,6 @@ class OpenAPI30Body(OpenAPIBody, OpenAPI30Parameter):
     # The `required` keyword is located above the schema for concrete media-type;
     # Therefore, it is passed here explicitly
     required: bool = False
-    description: str | None = None
 
     def as_json_schema(self, operation: APIOperation, *, update_quantifiers: bool = True) -> dict[str, Any]:
         """Convert body definition to JSON Schema."""
@@ -300,10 +294,6 @@ class OpenAPI20CompositeBody(OpenAPIBody, OpenAPI20Parameter):
             definition=[OpenAPI20Parameter(parameter) for parameter in parameters],
             media_type=media_type,
         )
-
-    @property
-    def description(self) -> str | None:
-        return None
 
     @property
     def is_required(self) -> bool:

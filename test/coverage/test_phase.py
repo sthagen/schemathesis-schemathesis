@@ -15,7 +15,12 @@ import schemathesis
 from schemathesis.config._projects import ProjectConfig
 from schemathesis.core import NOT_SET
 from schemathesis.generation import GenerationMode
-from schemathesis.generation.hypothesis.builder import HypothesisTestConfig, HypothesisTestMode, create_test
+from schemathesis.generation.hypothesis.builder import (
+    HypothesisTestConfig,
+    HypothesisTestMode,
+    _iter_coverage_cases,
+    create_test,
+)
 from schemathesis.generation.meta import TestPhase
 from schemathesis.specs.openapi.constants import LOCATION_TO_CONTAINER
 from test.utils import assert_requests_call
@@ -2032,6 +2037,89 @@ def test_nested_parameters(ctx):
     run_negative_test(operation, test)
 
     assert ranges == {"0"}
+
+
+def _request_body(inner):
+    return {
+        "requestBody": {
+            "content": {
+                "application/json": {
+                    "schema": inner,
+                }
+            }
+        }
+    }
+
+
+def _schemas(inner):
+    return {}
+
+
+@pytest.mark.parametrize(
+    ["operation", "components"],
+    [
+        (
+            _request_body(
+                {
+                    "properties": {
+                        "p1": {
+                            "$ref": "#components/schemas/Key",
+                        }
+                    }
+                }
+            ),
+            {
+                "schemas": {
+                    "Key": {
+                        "allOf": [
+                            {"$ref": ""},
+                        ]
+                    }
+                }
+            },
+        ),
+        (
+            _request_body({"$ref": "#components/schemas/Key"}),
+            {
+                "schemas": {
+                    "Key": {
+                        "default": 0,
+                        "items": {
+                            "$ref": "",
+                        },
+                    }
+                }
+            },
+        ),
+        (
+            {"parameters": [{"$ref": "#components/parameters/q"}]},
+            {
+                "parameters": {
+                    "q": {
+                        "in": "header",
+                        "name": "q",
+                        "content": {
+                            "text/plain": {"schema": {"$ref": "#unknown"}},
+                        },
+                    }
+                }
+            },
+        ),
+    ],
+    ids=["body-combinator", "body-items", "parameter-unresolvable"],
+)
+def test_references(ctx, operation, components):
+    raw_schema = ctx.openapi.build_schema({"/test": {"post": operation}}, components=components)
+    schema = schemathesis.openapi.from_dict(raw_schema)
+    for operation in schema.get_all_operations():
+        for _ in _iter_coverage_cases(
+            operation=operation.ok(),
+            generation_modes=list(GenerationMode),
+            generate_duplicate_query_parameters=False,
+            unexpected_methods=set(),
+            generation_config=schema.config.generation,
+        ):
+            pass
 
 
 def test_urlencoded_payloads_are_valid(ctx):

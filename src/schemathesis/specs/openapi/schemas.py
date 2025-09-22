@@ -29,10 +29,10 @@ from requests.structures import CaseInsensitiveDict
 from requests.utils import check_header_validity
 
 from schemathesis.core import INJECTED_PATH_PARAMETER_KEY, NOT_SET, NotSet, Specification, deserialization, media_types
-from schemathesis.core.bundler import Bundler
 from schemathesis.core.compat import RefResolutionError
 from schemathesis.core.errors import InternalError, InvalidSchema, OperationNotFound
 from schemathesis.core.failures import Failure, FailureGroup, MalformedJson
+from schemathesis.core.jsonschema import BundleError, Bundler
 from schemathesis.core.result import Err, Ok, Result
 from schemathesis.core.transforms import deepclone
 from schemathesis.core.transport import Response
@@ -305,7 +305,6 @@ class BaseOpenAPISchema(BaseSchema):
         # Optimization: local variables are faster than attribute access
         dispatch_hook = self.dispatch_hook
         resolve_path_item = self._resolve_path_item
-        resolve_operation = self._resolve_operation
         should_skip = self._should_skip
         collect_parameters = self.collect_parameters
         make_operation = self.make_operation
@@ -321,19 +320,17 @@ class BaseOpenAPISchema(BaseSchema):
                         if method not in HTTP_METHODS:
                             continue
                         try:
-                            resolved = resolve_operation(entry)
-                            if should_skip(path, method, resolved):
+                            if should_skip(path, method, entry):
                                 continue
                             raw_parameters = list(prepare_parameters(entry, resolver=self.resolver, bundler=bundler))
-                            parameters = collect_parameters(
-                                itertools.chain(raw_parameters, shared_parameters), resolved
-                            )
+                            parameters = collect_parameters(itertools.chain(raw_parameters, shared_parameters), entry)
                             operation = make_operation(
                                 path,
                                 method,
                                 parameters,
                                 entry,
-                                resolved,
+                                # TODO: Remove
+                                entry,
                                 scope,
                             )
                             yield Ok(operation)
@@ -418,7 +415,7 @@ class BaseOpenAPISchema(BaseSchema):
         }
         for name in missing_parameter_names:
             definition = {"name": name, INJECTED_PATH_PARAMETER_KEY: True, **deepclone(self._path_parameter_template)}
-            for parameter in self.collect_parameters([definition], resolved):
+            for parameter in self.collect_parameters([definition], raw):
                 operation.add_parameter(parameter)
         config = self.config.generation_for(operation=operation)
         if config.with_security_parameters:
@@ -952,12 +949,19 @@ class OpenApi30(SwaggerV20):
                 check_header(parameter)
             collected.append(OpenAPI30Parameter(definition=parameter))
         if "requestBody" in definition:
-            required = definition["requestBody"].get("required", False)
-            description = definition["requestBody"].get("description")
-            for media_type, content in definition["requestBody"]["content"].items():
-                collected.append(
-                    OpenAPI30Body(content, description=description, media_type=media_type, required=required)
-                )
+            if "$ref" in definition["requestBody"]:
+                _, body = self.resolver.resolve(definition["requestBody"]["$ref"])
+            else:
+                body = definition["requestBody"]
+            required = body.get("required", False)
+            for media_type, content in body["content"].items():
+                if "schema" in content:
+                    content = dict(content)
+                    try:
+                        content["schema"] = Bundler().bundle(content["schema"], self.resolver)
+                    except BundleError as exc:
+                        raise InvalidSchema.from_bundle_error(exc, "body") from exc
+                collected.append(OpenAPI30Body(content, media_type=media_type, required=required))
         return collected
 
     def get_response_schema(self, definition: dict[str, Any], scope: str) -> tuple[list[str], dict[str, Any] | None]:
