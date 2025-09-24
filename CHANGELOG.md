@@ -6,10 +6,15 @@
 
 - Properly generate boundary values for negative `maximum` during the coverage phase.
 - **CLI**: Internal error if referenced API operation is unresolvable.
+- **CLI**: Gracefully handle NULL byte in report path.
+- Use default Hypothesis profile in to detect changed settings for stateful testing instead of the current one.
+- Prevent missing required header check for optional authorization in OpenAPI.
+- Properly close HAR files.
 
 ### :wrench: Changed
 
 - Improve error reporting on incorrect `type` values.
+- **pytest**: Schemas with infinitely recursive references are reported as failures. [#947](https://github.com/schemathesis/schemathesis/issues/947)
 
 ### :racing_car: Performance
 
@@ -31,7 +36,7 @@
 
 ### :bug: Fixed
 
-- False positives in `ignored_auth` check if auth is declared as optional. [#3052](https://github.com/schemathesis/schemathesis/issues/3052) 
+- False positives in `ignored_auth` check if auth is declared as optional. [#3052](https://github.com/schemathesis/schemathesis/issues/3052)
 
 ## [4.1.1](https://github.com/schemathesis/schemathesis/compare/v4.1.0...v4.1.1) - 2025-08-23
 

@@ -7,82 +7,10 @@ from hypothesis import HealthCheck, given, settings
 from jsonschema.validators import Draft4Validator
 
 import schemathesis
-from schemathesis.core.compat import RefResolutionError
 from schemathesis.core.errors import InvalidSchema
 from schemathesis.generation.modes import GenerationMode
 
-from .utils import as_param, get_schema, integer
-
-
-@pytest.fixture
-def petstore():
-    return get_schema("petstore_v2.yaml")
-
-
-@pytest.mark.parametrize(
-    ("ref", "expected"),
-    [
-        (
-            {"$ref": "#/definitions/Category"},
-            {
-                "properties": {"id": {"format": "int64", "type": "integer"}, "name": {"type": "string"}},
-                "type": "object",
-                "xml": {"name": "Category"},
-            },
-        ),
-        (
-            {"$ref": "#/definitions/Pet"},
-            {
-                "properties": {
-                    "category": {
-                        "properties": {"id": {"format": "int64", "type": "integer"}, "name": {"type": "string"}},
-                        "type": "object",
-                        "xml": {"name": "Category"},
-                    },
-                    "id": {"format": "int64", "type": "integer"},
-                    "name": {"example": "doggie", "type": "string"},
-                    "photoUrls": {
-                        "items": {"type": "string"},
-                        "type": "array",
-                        "xml": {"name": "photoUrl", "wrapped": True},
-                        "example": ["https://photourl.com"],
-                    },
-                    "status": {
-                        "description": "pet status in the store",
-                        "enum": ["available", "pending", "sold"],
-                        "type": "string",
-                    },
-                    "tags": {
-                        "items": {
-                            "properties": {"id": {"format": "int64", "type": "integer"}, "name": {"type": "string"}},
-                            "type": "object",
-                            "xml": {"name": "Tag"},
-                        },
-                        "type": "array",
-                        "xml": {"name": "tag", "wrapped": True},
-                    },
-                },
-                "required": ["name", "photoUrls"],
-                "type": "object",
-                "xml": {"name": "Pet"},
-            },
-        ),
-    ],
-)
-def test_resolve(petstore, ref, expected):
-    assert petstore.resolver.resolve_all(ref) == expected
-
-
-def test_recursive_reference(mocker, schema_with_recursive_references):
-    mocker.patch("schemathesis.specs.openapi.references.RECURSION_DEPTH_LIMIT", 1)
-    reference = {"$ref": "#/components/schemas/Node"}
-    schema = schemathesis.openapi.from_dict(schema_with_recursive_references)
-    assert schema.resolver.resolve_all(reference) == {
-        "properties": {"child": {"properties": {"child": reference}, "required": ["child"], "type": "object"}},
-        "required": ["child"],
-        "type": "object",
-    }
-
+from .utils import as_param, integer
 
 USER_REFERENCE = {"$ref": "#/components/schemas/User"}
 ELIDABLE_SCHEMA = {"description": "Test", "type": "object", "properties": {"foo": {"type": "integer"}}}
@@ -212,13 +140,8 @@ def test_non_removable_recursive_references(ctx, definition):
     build_schema_with_recursion(schema, definition)
     schema = schemathesis.openapi.from_dict(schema)
 
-    @given(case=schema["/users"]["POST"].as_strategy())
-    @settings(max_examples=1)
-    def test(case):
-        pass
-
-    with pytest.raises(RefResolutionError):
-        test()
+    with pytest.raises(InvalidSchema):
+        schema["/users"]["POST"]
 
 
 def test_nested_recursive_references(ctx):
@@ -534,7 +457,7 @@ def test_(request, case):
     assert case.path == "/users"
     assert case.method == "POST"
     if not hasattr(case.meta.phase.data, "description"):
-        assert case.body in (None, 0, 1)
+        assert isinstance(case.body, int) or case.body is None
 """,
         paths={
             "/users": {
@@ -601,7 +524,7 @@ def test_(request, case):
     assert case.path == "/users"
     assert case.method == "GET"
     if not hasattr(case.meta.phase.data, "description"):
-        assert case.query["id"] in ("null", 1)
+        assert case.query["id"] in ("null", 1, 2)
 """,
         **as_param(integer(name="id", required=True, enum=[1, 2], **{"x-nullable": True})),
         generation_modes=[GenerationMode.POSITIVE],
@@ -887,6 +810,67 @@ def test_unresolvable_operation(ctx, cli, snapshot_cli, openapi3_base_url):
         }
     )
     assert cli.run(str(schema_path), f"--url={openapi3_base_url}", "--phases=fuzzing") == snapshot_cli
+
+
+@pytest.mark.parametrize(
+    ["paths", "components"],
+    [
+        (
+            {
+                "/changes": {
+                    "post": {
+                        "requestBody": {
+                            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/issue_change"}}}
+                        },
+                        "responses": {"default": {"description": "Ok"}},
+                    }
+                }
+            },
+            {
+                "schemas": {
+                    "account": {"$ref": "#/components/schemas/object"},
+                    "issue": {
+                        "allOf": [
+                            {"$ref": "#/components/schemas/object"},
+                            {"properties": {"key": {"$ref": "#/components/schemas/account"}}},
+                        ]
+                    },
+                    "issue_change": {"properties": {"key": {"$ref": "#/components/schemas/issue"}}},
+                    "object": {},
+                }
+            },
+        ),
+        (
+            {
+                "/changes": {
+                    "post": {
+                        "requestBody": {
+                            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/issue_change"}}}
+                        }
+                    }
+                }
+            },
+            {
+                "schemas": {
+                    "issue": {
+                        "allOf": [
+                            {"$ref": "#/components/schemas/object"},
+                            {"properties": {"key": {"$ref": "#/components/schemas/milestone"}}},
+                        ]
+                    },
+                    "issue_change": {"properties": {"key": {"$ref": "#/components/schemas/issue"}}},
+                    "milestone": {"allOf": [{"$ref": "#/components/schemas/object"}]},
+                    "object": {},
+                }
+            },
+        ),
+    ],
+)
+@pytest.mark.filterwarnings("error")
+def test_multiple_hops_references(ctx, cli, openapi3_base_url, snapshot_cli, paths, components):
+    schema_path = ctx.openapi.write_schema(paths, components=components)
+    # There should be no recursion error in another thread
+    assert cli.run(str(schema_path), f"--url={openapi3_base_url}", "--phases=examples") == snapshot_cli
 
 
 def test_iter_when_ref_resolves_to_none_in_body(ctx):

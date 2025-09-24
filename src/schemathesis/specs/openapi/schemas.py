@@ -30,7 +30,7 @@ from requests.utils import check_header_validity
 
 from schemathesis.core import INJECTED_PATH_PARAMETER_KEY, NOT_SET, NotSet, Specification, deserialization, media_types
 from schemathesis.core.compat import RefResolutionError
-from schemathesis.core.errors import InternalError, InvalidSchema, OperationNotFound
+from schemathesis.core.errors import InfiniteRecursiveReference, InvalidSchema, OperationNotFound
 from schemathesis.core.failures import Failure, FailureGroup, MalformedJson
 from schemathesis.core.jsonschema import BundleError, Bundler
 from schemathesis.core.result import Err, Ok, Result
@@ -72,7 +72,7 @@ if TYPE_CHECKING:
 
 HTTP_METHODS = frozenset({"get", "put", "post", "delete", "options", "head", "patch", "trace"})
 SCHEMA_ERROR_MESSAGE = "Ensure that the definition complies with the OpenAPI specification"
-SCHEMA_PARSING_ERRORS = (KeyError, AttributeError, RefResolutionError, InvalidSchema)
+SCHEMA_PARSING_ERRORS = (KeyError, AttributeError, RefResolutionError, InvalidSchema, InfiniteRecursiveReference)
 
 
 def check_header(parameter: dict[str, Any]) -> None:
@@ -259,11 +259,6 @@ class BaseOpenAPISchema(BaseSchema):
             except SCHEMA_PARSING_ERRORS:
                 continue
 
-    def _resolve_until_no_references(self, value: dict[str, Any]) -> dict[str, Any]:
-        while "$ref" in value:
-            _, value = self.resolver.resolve(value["$ref"])
-        return value
-
     def _resolve_operation(self, operation: dict[str, Any]) -> dict[str, Any]:
         return self.resolver.resolve_all(operation, RECURSION_DEPTH_LIMIT - 8)
 
@@ -353,6 +348,8 @@ class BaseOpenAPISchema(BaseSchema):
         method: str | None = None,
     ) -> NoReturn:
         __tracebackhide__ = True
+        if isinstance(error, InfiniteRecursiveReference):
+            raise InvalidSchema(str(error), path=path, method=method) from None
         if isinstance(error, RefResolutionError):
             raise InvalidSchema.from_reference_resolution_error(error, path=path, method=method) from None
         try:
@@ -715,10 +712,11 @@ class MethodMap(Mapping):
             resolved = schema._resolve_operation(operation)
         finally:
             schema.resolver.pop_scope()
-        try:
-            parameters = schema._collect_operation_parameters(self._path_item, resolved)
-        except SCHEMA_PARSING_ERRORS as exc:
-            schema._raise_invalid_schema(exc, path, method)
+        with in_scope(schema.resolver, scope):
+            try:
+                parameters = schema._collect_operation_parameters(self._path_item, resolved)
+            except SCHEMA_PARSING_ERRORS as exc:
+                schema._raise_invalid_schema(exc, path, method)
         return schema.make_operation(path, method, parameters, operation, resolved, scope)
 
     def __getitem__(self, item: str) -> APIOperation:
@@ -990,32 +988,20 @@ class OpenApi30(SwaggerV20):
         return serialization.serialize_openapi3_parameters(definitions)
 
     def get_request_payload_content_types(self, operation: APIOperation) -> list[str]:
-        request_body = self._resolve_until_no_references(operation.definition.raw["requestBody"])
-        return list(request_body["content"])
+        return [body.media_type for body in operation.body]
 
     def prepare_multipart(
         self, form_data: dict[str, Any], operation: APIOperation
     ) -> tuple[list | None, dict[str, Any] | None]:
         files = []
-        definition = operation.definition.raw
-        if "$ref" in definition["requestBody"]:
-            self.resolver.push_scope(operation.definition.scope)
-            try:
-                body = self.resolver.resolve_all(definition["requestBody"], RECURSION_DEPTH_LIMIT)
-            finally:
-                self.resolver.pop_scope()
-        else:
-            body = definition["requestBody"]
-        content = body["content"]
         # Open API 3.0 requires media types to be present. We can get here only if the schema defines
         # the "multipart/form-data" media type, or any other more general media type that matches it (like `*/*`)
-        for media_type, entry in content.items():
-            main, sub = media_types.parse(media_type)
+        schema = {}
+        for body in operation.body:
+            main, sub = media_types.parse(body.media_type)
             if main in ("*", "multipart") and sub in ("*", "form-data", "mixed"):
-                schema = entry.get("schema")
+                schema = body.definition.get("schema")
                 break
-        else:
-            raise InternalError("No 'multipart/form-data' media type found in the schema")
         for name, value in form_data.items():
             property_schema = (schema or {}).get("properties", {}).get(name)
             if property_schema:
