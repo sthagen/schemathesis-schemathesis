@@ -10,7 +10,7 @@ import schemathesis
 from schemathesis.core.errors import InvalidSchema
 from schemathesis.generation.modes import GenerationMode
 
-from .utils import as_param, integer
+from .utils import as_param, get_schema_path, integer
 
 USER_REFERENCE = {"$ref": "#/components/schemas/User"}
 ELIDABLE_SCHEMA = {"description": "Test", "type": "object", "properties": {"foo": {"type": "integer"}}}
@@ -540,20 +540,23 @@ def test_complex_dereference(testdir, complex_schema):
     path = Path(str(testdir))
     body_definition = {
         "schema": {
-            "additionalProperties": False,
-            "description": "Test",
-            "properties": {
-                "profile": {
+            "$ref": "#/x-bundled/schema1",
+            "x-bundled": {
+                "schema1": {
+                    "additionalProperties": False,
+                    "description": "Test",
+                    "properties": {"profile": {"$ref": "#/x-bundled/schema2"}, "username": {"type": "string"}},
+                    "required": ["username", "profile"],
+                    "type": "object",
+                },
+                "schema2": {
                     "additionalProperties": False,
                     "description": "Test",
                     "properties": {"id": {"type": "integer"}},
                     "required": ["id"],
                     "type": "object",
                 },
-                "username": {"type": "string"},
             },
-            "required": ["username", "profile"],
-            "type": "object",
         }
     }
     operation = schema["/teapot"]["POST"]
@@ -571,35 +574,6 @@ def test_complex_dereference(testdir, complex_schema):
             "required": True,
         },
         "responses": {"default": {"$ref": "../../common/responses.yaml#/DefaultError"}},
-        "summary": "Test",
-        "tags": ["ancillaries"],
-    }
-    assert operation.definition.resolved == {
-        "requestBody": {
-            "content": {"application/json": body_definition},
-            "description": "Test.",
-            "required": True,
-        },
-        "responses": {
-            "default": {
-                "content": {
-                    "application/json": {
-                        "schema": {
-                            "additionalProperties": False,
-                            "properties": {
-                                # Note, these `nullable` keywords are not transformed at this point
-                                # It is done during the response validation.
-                                "key": {"type": "string", "nullable": True},
-                                "referenced": {"type": "string", "nullable": True},
-                            },
-                            "required": ["key", "referenced"],
-                            "type": "object",
-                        }
-                    }
-                },
-                "description": "Probably an error",
-            }
-        },
         "summary": "Test",
         "tags": ["ancillaries"],
     }
@@ -711,7 +685,7 @@ def test_unresolvable_reference_during_generation(ctx, testdir):
 @pytest.mark.parametrize(
     ("key", "expected"),
     [
-        ("Key7", "Can not generate data for query parameter `key`! Its schema should be an object, got None"),
+        ("Key7", "Invalid `Key7` definition"),
         ("Key8", "Invalid `Key8` definition"),
     ],
 )
@@ -896,6 +870,38 @@ def test_iter_when_ref_resolves_to_none_in_body(ctx):
     )
 
     schema = schemathesis.openapi.from_dict(schema)
+
+    # Should not fail
+    for _ in schema.get_all_operations():
+        pass
+
+
+def test_resolve_large_schema():
+    path = get_schema_path("openapi3.json")
+    raw_schema = {
+        "openapi": "3.0.3",
+        "info": {"version": "1.0.0", "title": "My API", "description": "My HTTP interface."},
+        "paths": {
+            "/": {
+                "get": {
+                    "summary": "OpenAPI description (this document)",
+                    "responses": {
+                        "200": {
+                            "description": "OK",
+                            "content": {
+                                "application/openapi+json": {
+                                    "schema": {
+                                        "$ref": Path(path).as_uri(),
+                                    }
+                                }
+                            },
+                        }
+                    },
+                }
+            }
+        },
+    }
+    schema = schemathesis.openapi.from_dict(raw_schema)
 
     # Should not fail
     for _ in schema.get_all_operations():

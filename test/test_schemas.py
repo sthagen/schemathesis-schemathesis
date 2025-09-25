@@ -6,7 +6,7 @@ import schemathesis
 from schemathesis.core.errors import InvalidSchema, LoaderError, OperationNotFound
 from schemathesis.core.result import Err, Ok
 from schemathesis.specs.openapi.parameters import OpenAPI20Body
-from schemathesis.specs.openapi.schemas import InliningResolver
+from schemathesis.specs.openapi.schemas import ReferenceResolver
 
 
 @pytest.mark.parametrize("base_path", ["/v1", "/v1/"])
@@ -46,13 +46,13 @@ def test_open_api_specification(openapi_30):
 
 def test_resolver_cache(simple_schema, mocker):
     schema = schemathesis.openapi.from_dict(simple_schema)
-    spy = mocker.patch("schemathesis.specs.openapi.schemas.InliningResolver", wraps=InliningResolver)
+    spy = mocker.patch("schemathesis.specs.openapi.schemas.ReferenceResolver", wraps=ReferenceResolver)
     assert "_resolver" not in schema.__dict__
-    assert isinstance(schema.resolver, InliningResolver)
+    assert isinstance(schema.resolver, ReferenceResolver)
     assert spy.call_count == 1
     # Cached
     assert "_resolver" in schema.__dict__
-    assert isinstance(schema.resolver, InliningResolver)
+    assert isinstance(schema.resolver, ReferenceResolver)
     assert spy.call_count == 1
 
 
@@ -86,6 +86,9 @@ def test_resolving_multiple_files():
     assert isinstance(body, OpenAPI20Body)
     assert body.media_type == "application/json"
     assert body.definition == {
+        "in": "body",
+        "name": "user",
+        "required": True,
         "schema": {
             "type": "object",
             "properties": {
@@ -100,9 +103,6 @@ def test_resolving_multiple_files():
             },
             "xml": {"name": "User"},
         },
-        "in": "body",
-        "name": "user",
-        "required": True,
     }
 
 
@@ -245,26 +245,6 @@ def test_get_operation_by_id_no_paths_on_openapi_3_1():
     schema = schemathesis.openapi.from_dict(raw_schema)
     with pytest.raises(OperationNotFound):
         schema.get_operation_by_id("getFoo")
-
-
-@pytest.mark.parametrize(
-    ("fixture", "path"),
-    [
-        ("simple_schema", "/users"),
-        ("simple_openapi", "/query"),
-    ],
-)
-def test_missing_payload_schema(request, fixture, path):
-    raw_schema = request.getfixturevalue(fixture)
-    schema = schemathesis.openapi.from_dict(raw_schema)
-    operation = schema[path]["GET"]
-    assert operation.get_raw_payload_schema("application/xml") is None
-    assert operation.get_resolved_payload_schema("application/xml") is None
-
-
-def test_missing_payload_schema_media_type(open_api_3_schema_with_yaml_payload):
-    schema = schemathesis.openapi.from_dict(open_api_3_schema_with_yaml_payload)
-    assert schema["/yaml"]["POST"].get_raw_payload_schema("application/xml") is None
 
 
 @pytest.mark.skipif(platform.python_implementation() == "PyPy", reason="PyPy behaves differently")

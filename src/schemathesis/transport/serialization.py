@@ -3,11 +3,15 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from io import StringIO
-from typing import Any, Dict, List, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Union
 from unicodedata import normalize
 
+from schemathesis.core.compat import RefResolver
 from schemathesis.core.errors import UnboundPrefix
 from schemathesis.core.transforms import deepclone, transform
+
+if TYPE_CHECKING:
+    from schemathesis.generation.case import Case
 
 
 @dataclass
@@ -76,44 +80,65 @@ DEFAULT_TAG_NAME = "data"
 NAMESPACE_URL = "http://example.com/schema"
 
 
-def serialize_xml(
-    value: Any, raw_schema: dict[str, Any] | None, resolved_schema: dict[str, Any] | None
-) -> dict[str, Any]:
+def serialize_xml(case: Case, value: Any) -> dict[str, Any]:
+    media_type = case.media_type
+
+    assert media_type is not None
+
+    schema = None
+    resource_name = None
+
+    for body in case.operation.get_bodies_for_media_type(media_type):
+        schema = body.as_json_schema()
+        resource_name = body.resource_name
+        break
+    assert schema is not None, (case.operation.body, media_type)
+
+    return _serialize_xml(value, schema, resource_name=resource_name)
+
+
+def _serialize_xml(value: Any, schema: dict[str, Any], resource_name: str | None) -> dict[str, Any]:
     """Serialize a generated Python object as an XML string.
 
     Schemas may contain additional information for fine-tuned XML serialization.
     """
     if isinstance(value, (bytes, str)):
         return {"data": value}
-    tag = _get_xml_tag(raw_schema, resolved_schema)
+    resolver = RefResolver.from_schema(schema)
+    if "$ref" in schema:
+        _, schema = resolver.resolve(schema["$ref"])
+    tag = _get_xml_tag(schema, resource_name)
     buffer = StringIO()
     # Collect all namespaces to ensure that all child nodes with prefixes have proper namespaces in their parent nodes
     namespace_stack: list[str] = []
-    _write_xml(buffer, value, tag, resolved_schema, namespace_stack)
+    _write_xml(buffer, value, tag, schema, namespace_stack, resolver)
     data = buffer.getvalue()
     return {"data": data.encode("utf8")}
 
 
-def _get_xml_tag(raw_schema: dict[str, Any] | None, resolved_schema: dict[str, Any] | None) -> str:
+def _get_xml_tag(schema: dict[str, Any] | None, resource_name: str | None) -> str:
     # On the top level we need to detect the proper XML tag, in other cases it is known from object properties
-    if (resolved_schema or {}).get("xml", {}).get("name"):
-        return (resolved_schema or {})["xml"]["name"]
-
-    # Check if the name can be derived from a reference in the raw schema
-    if "$ref" in (raw_schema or {}):
-        return _get_tag_name_from_reference((raw_schema or {})["$ref"])
+    if (schema or {}).get("xml", {}).get("name"):
+        return (schema or {})["xml"]["name"]
+    if resource_name is not None:
+        return resource_name
 
     # Here we don't have any name for the payload schema - no reference or the `xml` property
     return DEFAULT_TAG_NAME
 
 
 def _write_xml(
-    buffer: StringIO, value: JSON, tag: str, schema: dict[str, Any] | None, namespace_stack: list[str]
+    buffer: StringIO,
+    value: JSON,
+    tag: str,
+    schema: dict[str, Any] | None,
+    namespace_stack: list[str],
+    resolver: RefResolver,
 ) -> None:
     if isinstance(value, dict):
-        _write_object(buffer, value, tag, schema, namespace_stack)
+        _write_object(buffer, value, tag, schema, namespace_stack, resolver)
     elif isinstance(value, list):
-        _write_array(buffer, value, tag, schema, namespace_stack)
+        _write_array(buffer, value, tag, schema, namespace_stack, resolver)
     else:
         _write_primitive(buffer, value, tag, schema, namespace_stack)
 
@@ -138,7 +163,12 @@ def pop_namespace_if_any(namespace_stack: list[str], options: dict[str, Any]) ->
 
 
 def _write_object(
-    buffer: StringIO, obj: dict[str, JSON], tag: str, schema: dict[str, Any] | None, stack: list[str]
+    buffer: StringIO,
+    obj: dict[str, JSON],
+    tag: str,
+    schema: dict[str, Any] | None,
+    stack: list[str],
+    resolver: RefResolver,
 ) -> None:
     options = (schema or {}).get("xml", {})
     push_namespace_if_any(stack, options)
@@ -155,6 +185,8 @@ def _write_object(
     properties = (schema or {}).get("properties", {})
     for child_name, value in obj.items():
         property_schema = properties.get(child_name, {})
+        if "$ref" in property_schema:
+            _, property_schema = resolver.resolve(property_schema["$ref"])
         child_options = property_schema.get("xml", {})
         push_namespace_if_any(stack, child_options)
         child_tag = child_options.get("name", child_name)
@@ -178,7 +210,7 @@ def _write_object(
             _validate_prefix(child_options, stack)
             prefix = child_options["prefix"]
             child_tag = f"{prefix}:{child_tag}"
-        _write_xml(children_buffer, value, child_tag, property_schema, stack)
+        _write_xml(children_buffer, value, child_tag, property_schema, stack, resolver)
         pop_namespace_if_any(stack, child_options)
 
     # Write namespace declarations for attributes
@@ -193,7 +225,9 @@ def _write_object(
     pop_namespace_if_any(stack, options)
 
 
-def _write_array(buffer: StringIO, obj: list[JSON], tag: str, schema: dict[str, Any] | None, stack: list[str]) -> None:
+def _write_array(
+    buffer: StringIO, obj: list[JSON], tag: str, schema: dict[str, Any] | None, stack: list[str], resolver: RefResolver
+) -> None:
     options = (schema or {}).get("xml", {})
     push_namespace_if_any(stack, options)
     if options.get("prefix"):
@@ -208,6 +242,8 @@ def _write_array(buffer: StringIO, obj: list[JSON], tag: str, schema: dict[str, 
         buffer.write(">")
     # In Open API `items` value should be an object and not an array
     items = deepclone((schema or {}).get("items", {}))
+    if "$ref" in items:
+        _, items = resolver.resolve(items["$ref"])
     child_options = items.get("xml", {})
     child_tag = child_options.get("name", tag)
     if not is_namespace_specified and "namespace" in options:
@@ -217,7 +253,7 @@ def _write_array(buffer: StringIO, obj: list[JSON], tag: str, schema: dict[str, 
     items["xml"] = child_options
     _validate_prefix(child_options, stack)
     for item in obj:
-        _write_xml(buffer, item, child_tag, items, stack)
+        _write_xml(buffer, item, child_tag, items, stack, resolver)
     if wrapped:
         buffer.write(f"</{tag}>")
     pop_namespace_if_any(stack, options)
@@ -241,11 +277,6 @@ def _write_namespace(buffer: StringIO, options: dict[str, Any]) -> None:
     if "prefix" in options:
         buffer.write(f":{options['prefix']}")
     buffer.write(f'="{options["namespace"]}"')
-
-
-def _get_tag_name_from_reference(reference: str) -> str:
-    """Extract object name from a reference."""
-    return reference.rsplit("/", maxsplit=1)[1]
 
 
 def _escape_xml(value: JSON) -> str:

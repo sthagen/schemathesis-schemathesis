@@ -3,23 +3,24 @@ from __future__ import annotations
 from contextlib import suppress
 from dataclasses import dataclass
 from functools import lru_cache
-from itertools import chain, cycle, islice
+from itertools import cycle, islice
 from typing import TYPE_CHECKING, Any, Generator, Iterator, Union, cast, overload
 
 import requests
 from hypothesis_jsonschema import from_schema
-from hypothesis_jsonschema._canonicalise import HypothesisRefResolutionError, merged
 
 from schemathesis.config import GenerationConfig
 from schemathesis.core.compat import RefResolutionError, RefResolver
 from schemathesis.core.errors import InfiniteRecursiveReference, UnresolvableReference
 from schemathesis.core.jsonschema import references
+from schemathesis.core.jsonschema.bundler import BUNDLE_STORAGE_KEY
 from schemathesis.core.transforms import deepclone
 from schemathesis.core.transport import DEFAULT_RESPONSE_TIMEOUT
 from schemathesis.generation.case import Case
 from schemathesis.generation.hypothesis import examples
 from schemathesis.generation.meta import TestPhase
 from schemathesis.schemas import APIOperation
+from schemathesis.specs.openapi.references import resolve_in_scope
 from schemathesis.specs.openapi.serialization import get_serializers_for_operation
 
 from ._hypothesis import get_default_format_strategies, openapi_cases
@@ -128,12 +129,7 @@ def extract_top_level(operation: APIOperation[OpenAPIParameter]) -> Generator[Ex
                         value=definition[example_field],
                     )
         if parameter.examples_field in parameter.definition:
-            unresolved_definition = _find_parameter_examples_definition(
-                operation, parameter.name, parameter.examples_field
-            )
-            for value in extract_inner_examples(
-                parameter.definition[parameter.examples_field], unresolved_definition, operation.schema
-            ):
+            for value in extract_inner_examples(parameter.definition[parameter.examples_field], operation.schema):
                 yield ParameterExample(
                     container=LOCATION_TO_CONTAINER[parameter.location], name=parameter.name, value=value
                 )
@@ -169,10 +165,7 @@ def extract_top_level(operation: APIOperation[OpenAPIParameter]) -> Generator[Ex
                 if isinstance(definition, dict) and example_field in definition:
                     yield BodyExample(value=definition[example_field], media_type=alternative.media_type)
         if alternative.examples_field in alternative.definition:
-            unresolved_definition = _find_request_body_examples_definition(operation, alternative)
-            for value in extract_inner_examples(
-                alternative.definition[alternative.examples_field], unresolved_definition, operation.schema
-            ):
+            for value in extract_inner_examples(alternative.definition[alternative.examples_field], operation.schema):
                 yield BodyExample(value=value, media_type=alternative.media_type)
         if "schema" in alternative.definition:
             schema = alternative.definition["schema"]
@@ -243,63 +236,21 @@ def _expand_subschemas(
             yield subschema
 
 
-def _find_parameter_examples_definition(
-    operation: APIOperation[OpenAPIParameter], parameter_name: str, field_name: str
-) -> dict[str, Any]:
-    """Find the original, unresolved `examples` definition of a parameter."""
-    from .schemas import BaseOpenAPISchema
-
-    schema = cast(BaseOpenAPISchema, operation.schema)
-    raw_schema = schema.raw_schema
-    path_data = raw_schema["paths"][operation.path]
-    parameters = chain(path_data[operation.method].get("parameters", []), path_data.get("parameters", []))
-    for parameter in parameters:
-        if "$ref" in parameter:
-            _, parameter = schema.resolver.resolve(parameter["$ref"])
-        if parameter["name"] == parameter_name:
-            return parameter[field_name]
-    raise RuntimeError("Example definition is not found. It should not happen")
-
-
-def _find_request_body_examples_definition(
-    operation: APIOperation[OpenAPIParameter], alternative: OpenAPIBody
-) -> dict[str, Any]:
-    """Find the original, unresolved `examples` definition of a request body variant."""
-    from .schemas import BaseOpenAPISchema
-
-    schema = cast(BaseOpenAPISchema, operation.schema)
-    if schema.specification.version == "2.0":
-        raw_schema = schema.raw_schema
-        path_data = raw_schema["paths"][operation.path]
-        parameters = chain(path_data[operation.method].get("parameters", []), path_data.get("parameters", []))
-        for parameter in parameters:
-            if "$ref" in parameter:
-                _, parameter = schema.resolver.resolve(parameter["$ref"])
-            if parameter["in"] == "body":
-                return parameter[alternative.examples_field]
-        raise RuntimeError("Example definition is not found. It should not happen")
-    request_body = operation.definition.raw["requestBody"]
-    while "$ref" in request_body:
-        _, request_body = schema.resolver.resolve(request_body["$ref"])
-    return request_body["content"][alternative.media_type][alternative.examples_field]
-
-
-def extract_inner_examples(
-    examples: dict[str, Any] | list, unresolved_definition: dict[str, Any], schema: BaseOpenAPISchema
-) -> Generator[Any, None, None]:
+def extract_inner_examples(examples: dict[str, Any] | list, schema: BaseOpenAPISchema) -> Generator[Any, None, None]:
     """Extract exact examples values from the `examples` dictionary."""
     if isinstance(examples, dict):
-        for name, example in examples.items():
-            if "$ref" in unresolved_definition[name] and "value" not in example and "externalValue" not in example:
-                _, resolved = schema.resolver.resolve(unresolved_definition[name]["$ref"])
-                yield resolved
+        for example in examples.values():
             if isinstance(example, dict):
+                if "$ref" in example:
+                    _, example = schema.resolver.resolve(example["$ref"])
                 if "value" in example:
                     yield example["value"]
                 elif "externalValue" in example:
                     with suppress(requests.RequestException):
                         # Report a warning if not available?
                         yield load_external_example(example["externalValue"])
+                elif example:
+                    yield example
     elif isinstance(examples, list):
         yield from examples
 
@@ -319,6 +270,7 @@ def extract_from_schemas(operation: APIOperation[OpenAPIParameter]) -> Generator
         schema = parameter.as_json_schema()
         resolver = RefResolver.from_schema(schema)
         seen_references.clear()
+        bundle_storage = schema.get(BUNDLE_STORAGE_KEY)
         for value in extract_from_schema(
             operation=operation,
             schema=schema,
@@ -326,6 +278,7 @@ def extract_from_schemas(operation: APIOperation[OpenAPIParameter]) -> Generator
             examples_field_name=parameter.examples_field,
             resolver=resolver,
             seen_references=seen_references,
+            bundle_storage=bundle_storage,
         ):
             yield ParameterExample(
                 container=LOCATION_TO_CONTAINER[parameter.location], name=parameter.name, value=value
@@ -334,6 +287,7 @@ def extract_from_schemas(operation: APIOperation[OpenAPIParameter]) -> Generator
         alternative = cast(OpenAPIBody, alternative)
         schema = alternative.as_json_schema()
         resolver = RefResolver.from_schema(schema)
+        bundle_storage = schema.get(BUNDLE_STORAGE_KEY)
         for example_field, examples_field in (("example", "examples"), ("x-example", "x-examples")):
             seen_references.clear()
             for value in extract_from_schema(
@@ -343,6 +297,7 @@ def extract_from_schemas(operation: APIOperation[OpenAPIParameter]) -> Generator
                 examples_field_name=examples_field,
                 resolver=resolver,
                 seen_references=seen_references,
+                bundle_storage=bundle_storage,
             ):
                 yield BodyExample(value=value, media_type=alternative.media_type)
 
@@ -355,6 +310,7 @@ def extract_from_schema(
     examples_field_name: str,
     resolver: RefResolver,
     seen_references: set[str],
+    bundle_storage: dict[str, Any] | None,
 ) -> Generator[Any, None, None]:
     """Extract all examples from a single schema definition."""
     # This implementation supports only `properties` and `items`
@@ -385,6 +341,7 @@ def extract_from_schema(
                         examples_field_name=examples_field_name,
                         resolver=resolver,
                         seen_references=seen_references,
+                        bundle_storage=bundle_storage,
                     )
                 )
                 if not values:
@@ -399,7 +356,9 @@ def extract_from_schema(
                 if name in variants:
                     # Generated by one of `anyOf` or similar sub-schemas
                     continue
-                subschema = resolve_all_refs(subschema, resolver=resolver)
+                if bundle_storage is not None:
+                    subschema = deepclone(subschema)
+                    subschema[BUNDLE_STORAGE_KEY] = bundle_storage
                 generated = _generate_single_example(subschema, config)
                 variants[name] = [generated]
             # Calculate the maximum number of examples any property has
@@ -419,51 +378,9 @@ def extract_from_schema(
             examples_field_name=examples_field_name,
             resolver=resolver,
             seen_references=seen_references,
+            bundle_storage=bundle_storage,
         ):
             yield [value]
-
-
-SCHEMA_KEYS = (
-    "items",
-    "additionalItems",
-    "contains",
-    "additionalProperties",
-    "propertyNames",
-    "if",
-    "then",
-    "else",
-    "allOf",
-    "anyOf",
-    "oneOf",
-    "not",
-)
-SCHEMA_OBJECT_KEYS = ("properties", "patternProperties", "dependencies")
-
-
-def resolve_all_refs(schema: dict[str, Any] | bool, *, resolver: RefResolver) -> dict[str, Any]:
-    if isinstance(schema, bool):
-        return {}
-    if "$ref" in schema:
-        s = dict(schema)
-        ref = s.pop("$ref")
-        with resolver.resolving(ref) as got:
-            m = merged([s, resolve_all_refs(got, resolver=resolver)])
-            if m is None:  # pragma: no cover
-                raise HypothesisRefResolutionError(f"$ref:{ref!r} had incompatible base schema {s!r}")
-            return m
-
-    for key, value in schema.items():
-        if key in SCHEMA_KEYS:
-            if isinstance(value, list):
-                schema[key] = [resolve_all_refs(v, resolver=resolver) if isinstance(v, dict) else v for v in value]
-            elif isinstance(value, dict):
-                schema[key] = resolve_all_refs(value, resolver=resolver)
-        if key in SCHEMA_OBJECT_KEYS:
-            assert isinstance(value, dict)
-            schema[key] = {
-                k: resolve_all_refs(v, resolver=resolver) if isinstance(v, dict) else v for k, v in value.items()
-            }
-    return schema
 
 
 def _generate_single_example(
@@ -535,7 +452,7 @@ def find_in_responses(operation: APIOperation) -> dict[str, list[dict[str, Any]]
             # Check only 2xx responses
             continue
         if isinstance(response, dict) and "$ref" in response:
-            _, response = operation.schema.resolver.resolve_in_scope(response, operation.definition.scope)  # type:ignore[attr-defined]
+            _, response = resolve_in_scope(operation.schema.resolver, response, operation.definition.scope)  # type:ignore[attr-defined]
         for media_type, definition in response.get("content", {}).items():
             schema_ref = definition.get("schema", {}).get("$ref")
             if schema_ref:
