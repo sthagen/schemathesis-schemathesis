@@ -1,6 +1,20 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List, Mapping, Union, overload
+from typing import Any, Callable, Dict, List, Mapping, TypeVar, Union, overload
+
+T = TypeVar("T")
+
+
+@overload
+def deepclone(value: dict) -> dict: ...  # pragma: no cover
+
+
+@overload
+def deepclone(value: list) -> list: ...  # pragma: no cover
+
+
+@overload
+def deepclone(value: T) -> T: ...  # pragma: no cover
 
 
 def deepclone(value: Any) -> Any:
@@ -11,7 +25,16 @@ def deepclone(value: Any) -> Any:
     if isinstance(value, dict):
         return {
             k1: (
-                {k2: deepclone(v2) for k2, v2 in v1.items()}
+                {
+                    k2: (
+                        {k3: deepclone(v3) for k3, v3 in v2.items()}
+                        if isinstance(v2, dict)
+                        else [deepclone(v3) for v3 in v2]
+                        if isinstance(v2, list)
+                        else v2
+                    )
+                    for k2, v2 in v1.items()
+                }
                 if isinstance(v1, dict)
                 else [deepclone(v2) for v2 in v1]
                 if isinstance(v1, list)
