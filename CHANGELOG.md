@@ -11,6 +11,7 @@
 - Prevent missing required header check for optional authorization in OpenAPI.
 - Properly close HAR files.
 - Avoid excessive memory consumption in resolved schemas. [#1697](https://github.com/schemathesis/schemathesis/issues/1697)
+- Properly search for `examples` in Open API 2.0 responses.
 
 ### :wrench: Changed
 
@@ -21,6 +22,7 @@
 
 - Avoid choosing mutations that aren't applicable in the current context.
 - Response schema validation is now 5–15x faster on average.
+- Response header schema validation is now 15–30x faster on average.
 
 ## [4.1.4](https://github.com/schemathesis/schemathesis/compare/v4.1.3...v4.1.4) - 2025-09-01
 
