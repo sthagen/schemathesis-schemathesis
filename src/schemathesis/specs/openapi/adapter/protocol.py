@@ -1,16 +1,21 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Iterator, Mapping, Protocol, Union
+from typing import TYPE_CHECKING, Any, Callable, Iterator, Mapping, Protocol, Sequence, Union
 
 if TYPE_CHECKING:
     from jsonschema.protocols import Validator
 
     from schemathesis.core.compat import RefResolver
     from schemathesis.core.jsonschema.types import JsonSchema
+    from schemathesis.specs.openapi.parameters import OpenAPIParameter
 
 IterResponseExamples = Callable[[Mapping[str, Any], str], Iterator[tuple[str, object]]]
 ExtractResponseSchema = Callable[[Mapping[str, Any], "RefResolver", str, str], Union["JsonSchema", None]]
 ExtractHeaderSchema = Callable[[Mapping[str, Any], "RefResolver", str, str], "JsonSchema"]
+IterParameters = Callable[
+    [Mapping[str, Any], Sequence[Mapping[str, Any]], list[str], "RefResolver"], Iterator["OpenAPIParameter"]
+]
+BuildPathParameter = Callable[[Mapping[str, Any]], "OpenAPIParameter"]
 
 
 class SpecificationAdapter(Protocol):
@@ -28,5 +33,9 @@ class SpecificationAdapter(Protocol):
     extract_response_schema: ExtractResponseSchema
     # Function to extract header schema from specification
     extract_header_schema: ExtractHeaderSchema
+    # Function to iterate over API operation parameters
+    iter_parameters: IterParameters
+    # Function to create a new path parameter
+    build_path_parameter: BuildPathParameter
     # JSON Schema validator class appropriate for this specification version
     jsonschema_validator_cls: type[Validator]
