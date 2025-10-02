@@ -69,12 +69,14 @@ class DiffBase:
     @classmethod
     def from_hierarchy(cls, configs: list[T]) -> T:
         # This config will accumulate "merged" config options
+        if len(configs) == 1:
+            return configs[0]
         output = cls()
         for option in cls.__slots__:  # type: ignore
             if option.startswith("_"):
                 continue
             default = getattr(output, option)
-            if is_dataclass(default):
+            if hasattr(default, "__dataclass_fields__"):
                 # Sub-configs require merging of nested config options
                 sub_configs = [getattr(config, option) for config in configs]
                 merged = type(default).from_hierarchy(sub_configs)  # type: ignore[union-attr]
