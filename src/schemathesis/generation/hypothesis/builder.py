@@ -24,6 +24,7 @@ from schemathesis.core import INJECTED_PATH_PARAMETER_KEY, NOT_SET, NotSet, Spec
 from schemathesis.core.errors import (
     InfiniteRecursiveReference,
     InvalidSchema,
+    MalformedMediaType,
     SerializationNotPossible,
     UnresolvableReference,
 )
@@ -551,6 +552,7 @@ def _iter_coverage_cases(
             coverage.CoverageContext(
                 root_schema=schema,
                 location=location,
+                media_type=None,
                 generation_modes=generation_modes,
                 is_required=parameter.is_required,
                 custom_formats=custom_formats,
@@ -560,6 +562,27 @@ def _iter_coverage_cases(
         )
         value = next(gen, NOT_SET)
         if isinstance(value, NotSet):
+            if location == ParameterLocation.PATH:
+                # Can't skip path parameters - they should be filled
+                schema = dict(schema)
+                schema.setdefault("type", "string")
+                schema.setdefault("minLength", 1)
+                gen = coverage.cover_schema_iter(
+                    coverage.CoverageContext(
+                        root_schema=schema,
+                        location=location,
+                        media_type=None,
+                        generation_modes=[GenerationMode.POSITIVE],
+                        is_required=parameter.is_required,
+                        custom_formats=custom_formats,
+                        validator_cls=validator_cls,
+                    ),
+                    schema,
+                )
+                value = next(gen, NOT_SET)
+                assert not isinstance(value, NotSet), f"It should always be possible: {schema!r}"
+                template.add_parameter(location, name, value)
+                continue
             continue
         template.add_parameter(location, name, value)
         generators[(location, name)] = gen
@@ -576,10 +599,15 @@ def _iter_coverage_cases(
                     schema["examples"] = [example for example in examples if isinstance(example, (str, bytes))]
                 else:
                     schema["examples"] = examples
+            try:
+                media_type = media_types.parse(body.media_type)
+            except MalformedMediaType:
+                media_type = None
             gen = coverage.cover_schema_iter(
                 coverage.CoverageContext(
                     root_schema=schema,
                     location=ParameterLocation.BODY,
+                    media_type=media_type,
                     generation_modes=generation_modes,
                     is_required=body.is_required,
                     custom_formats=custom_formats,
@@ -812,6 +840,7 @@ def _iter_coverage_cases(
                     coverage.CoverageContext(
                         root_schema=subschema,
                         location=_location,
+                        media_type=None,
                         generation_modes=[GenerationMode.NEGATIVE],
                         is_required=is_required,
                         custom_formats=custom_formats,

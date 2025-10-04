@@ -1,6 +1,8 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.1.4...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.2.0...HEAD) - TBD
+
+## [4.2.0](https://github.com/schemathesis/schemathesis/compare/v4.1.4...v4.2.0) - 2025-10-03
 
 ### :bug: Fixed
 
@@ -14,7 +16,9 @@
 - Properly search for `examples` in Open API 2.0 responses.
 - Coverage phase missing some examples for request bodies.
 - Accept booleans for parameter schemas in Open API 3.1.
-- Fixed false positives in `negative_data_rejection` check for array of strings query parameters. [#3056](https://github.com/schemathesis/schemathesis/issues/3056)
+- False positives in `negative_data_rejection` check for array of strings query parameters. [#3056](https://github.com/schemathesis/schemathesis/issues/3056)
+- False positives in `negative_data_rejection` check for `application/x-www-form-urlencoded` media type.
+- False positive report about missing path parameter during the coverage phase with `--mode=negative`.
 
 ### :wrench: Changed
 
