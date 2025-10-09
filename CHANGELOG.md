@@ -1,6 +1,12 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.2.0...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.2.1...HEAD) - TBD
+
+## [4.2.1](https://github.com/schemathesis/schemathesis/compare/v4.2.0...v4.2.1) - 2025-10-09
+
+### :bug: Fixed
+
+- False positive schema error message due to incorrect schema type detection. [#3149](https://github.com/schemathesis/schemathesis/issues/3149)
 
 ### :racing_car: Performance
 
