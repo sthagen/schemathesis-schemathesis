@@ -1,6 +1,17 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.2.1...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.2.2...HEAD) - TBD
+
+## [4.2.2](https://github.com/schemathesis/schemathesis/compare/v4.2.1...v4.2.2) - 2025-10-11
+
+### :bug: Fixed
+
+- False positive error about recursive references when there are non-recursive and non-removable ones are present in the same schema.
+- False positive error about recursive references in the examples phase.
+
+### :wrench: Changed
+
+- Improve recursive reference sanitization.
 
 ## [4.2.1](https://github.com/schemathesis/schemathesis/compare/v4.2.0...v4.2.1) - 2025-10-09
 
