@@ -21,9 +21,9 @@ jobs:
         with:
           python-version: "3.11"
 
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
 
-      - run: uvx --from=".[tests]" pytest test-corpus -n auto -k test_default --durations=20 --dist=worksteal
+      - run: uvx --from=".[tests]" pytest test-corpus/test_corpus.py -n auto -k test_default --durations=20 --dist=worksteal
 
   corpus-coverage:
     name: Corpus tests for the coverage phase
@@ -38,6 +38,23 @@ jobs:
         with:
           python-version: "3.11"
 
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
 
-      - run: uvx --from=".[tests]" pytest test-corpus -n auto -k test_coverage_phase --durations=20 --dist=worksteal
+      - run: uvx --from=".[tests]" pytest test-corpus/test_corpus.py -n auto -k test_coverage_phase --durations=20 --dist=worksteal
+
+  corpus-inference:
+    name: Corpus tests for dependency inference
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          submodules: true
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - uses: astral-sh/setup-uv@v7
+
+      - run: uvx --from=".[tests]" pytest test-corpus/test_inference.py -n auto --durations=20 --dist=worksteal
