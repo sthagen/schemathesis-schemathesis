@@ -1,6 +1,22 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.3.0...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.3.2...HEAD) - TBD
+
+### :rocket: Added
+
+- Use `requestBody` to infer producer -> producer dependencies.
+
+## [4.3.2](https://github.com/schemathesis/schemathesis/compare/v4.3.1...v4.3.2) - 2025-10-14
+
+### :bug: Fixed
+
+- Incorrect reference resolution scope change when resolving responses. [#1184](https://github.com/schemathesis/schemathesis/issues/1184)
+
+### :wrench: Changed
+
+- Display cycles in error messages for infinitely recursive schemas.
+
+## [4.3.1](https://github.com/schemathesis/schemathesis/compare/v4.3.0...v4.3.1) - 2025-10-14
 
 ### :bug: Fixed
 
@@ -9,6 +25,7 @@
 ### :wrench: Changed
 
 - Response schema validation errors now display the failing keyword first to prevent truncation.
+- Support more scenarios for dependency inference.
 
 ### :racing_car: Performance
 

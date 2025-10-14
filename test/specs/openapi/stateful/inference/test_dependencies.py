@@ -83,6 +83,49 @@ def json_response(status: str, schema):
     return response(status, schema, "application/json")
 
 
+def operation_with_body(
+    method: str,
+    path: str,
+    response_status: str,
+    request_body_schema,
+    response_schema=None,
+    parameters=None,
+    operation_id=None,
+):
+    op = response(response_status, response_schema)
+    op["requestBody"] = {"content": {"application/json": {"schema": request_body_schema}}}
+    if parameters:
+        op["parameters"] = parameters
+    if operation_id:
+        op["operationId"] = operation_id
+    return {path: {method: op}}
+
+
+ORDER_REQUEST_WITH_CUSTOMER = {
+    "type": "object",
+    "properties": {"customer_id": {"type": "string"}, "total": {"type": "number"}},
+    "required": ["customer_id"],
+}
+
+ORDER_RESPONSE = {
+    "type": "object",
+    "properties": {"id": {"type": "string"}, "customer_id": {"type": "string"}, "total": {"type": "number"}},
+    "required": ["id"],
+}
+
+PRODUCT_REQUEST = {
+    "type": "object",
+    "properties": {"name": {"type": "string"}, "price": {"type": "number"}},
+    "required": ["name"],
+}
+
+PRODUCT_RESPONSE = {
+    "type": "object",
+    "properties": {"id": {"type": "string"}, "name": {"type": "string"}, "price": {"type": "number"}},
+    "required": ["id"],
+}
+
+
 USER_SCHEMA = {
     "type": "object",
     "properties": {"id": {"type": "string"}},
@@ -992,6 +1035,203 @@ def snapshot_json(snapshot):
             },
             id="id-direct-match",
         ),
+        pytest.param(
+            {
+                "/data_requests/{data_request_id}": {
+                    "get": {},
+                    "put": json_response(
+                        "200",
+                        {
+                            "properties": {
+                                "data_request": {
+                                    "properties": {
+                                        "id": {
+                                            "type": "string",
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                    ),
+                },
+            },
+            None,
+            id="same-name-wrapper",
+        ),
+        pytest.param(
+            {
+                "/{source}/datasets": {
+                    "get": json_response(
+                        "200",
+                        {
+                            "properties": {
+                                "datasets": {
+                                    "items": {
+                                        "properties": {
+                                            "dataset": {"$ref": "#/components/schemas/dataset"},
+                                            "links": {},
+                                        },
+                                        "type": "object",
+                                    },
+                                    "type": "array",
+                                },
+                                "links": {},
+                                "total_count": {"type": "integer"},
+                            }
+                        },
+                    )
+                },
+                "/{source}/datasets/{dataset_id}/exports/json": {"get": {}},
+            },
+            {
+                "schemas": {
+                    "dataset": SCHEMA_WITH_ID,
+                }
+            },
+            id="wrapper-with-items",
+        ),
+        pytest.param(
+            {
+                "/comments/{id}/read": {
+                    "patch": {
+                        "responses": {
+                            "200": {"$ref": "#/components/responses/ReadCommentResponse"},
+                        },
+                    }
+                }
+            },
+            {
+                "responses": {
+                    "ReadCommentResponse": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {"data": {"allOf": [{"$ref": "#/components/schemas/ReadComment"}]}}
+                                }
+                            }
+                        }
+                    }
+                },
+                "schemas": {
+                    "Comment": {"properties": {"id": {}}},
+                    "ReadComment": {"allOf": [{"$ref": "#/components/schemas/Comment"}]},
+                },
+            },
+            id="multiple-all-of-layers",
+        ),
+        pytest.param(
+            {
+                **operation("post", "/customers", "201", SCHEMA_WITH_ID, operation_id="createCustomer"),
+                **operation_with_body(
+                    "post", "/orders", "201", ORDER_REQUEST_WITH_CUSTOMER, ORDER_RESPONSE, operation_id="createOrder"
+                ),
+            },
+            None,
+            id="requestbody-with-producer-id",
+        ),
+        pytest.param(
+            {
+                **operation("post", "/customers", "201", SCHEMA_WITH_ID, operation_id="createCustomer"),
+                **operation_with_body(
+                    "post", "/products", "201", PRODUCT_REQUEST, PRODUCT_RESPONSE, operation_id="createProduct"
+                ),
+            },
+            None,
+            id="requestbody-without-producer-id",
+        ),
+        pytest.param(
+            {
+                **operation("post", "/recipients", "201", component_ref("Recipient"), operation_id="createRecipient"),
+                **operation_with_body(
+                    "post",
+                    "/devices",
+                    "201",
+                    component_ref("DeviceDetails"),
+                    component_ref("Device"),
+                    operation_id="createDevice",
+                ),
+            },
+            {
+                "schemas": {
+                    "Recipient": SCHEMA_WITH_ID,
+                    "DeviceDetails": {
+                        "type": "object",
+                        "properties": {"name": {"type": "string"}, "recipient_id": component_ref("Recipient")},
+                        "required": ["name", "recipient_id"],
+                    },
+                    "Device": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string"},
+                            "name": {"type": "string"},
+                            "recipient_id": {"type": "string"},
+                        },
+                        "required": ["id"],
+                    },
+                }
+            },
+            id="requestbody-field-ref-to-producer-schema",
+        ),
+        pytest.param(
+            {
+                **operation("post", "/recipients", "201", component_ref("Recipient"), operation_id="createRecipient"),
+                "/devices": {
+                    "post": {
+                        "operationId": "createDevice",
+                        "requestBody": {
+                            "content": {
+                                "application/json": {"schema": component_ref("DeviceDetails")},
+                                "application/xml": {"schema": component_ref("DeviceDetails")},
+                            }
+                        },
+                        "responses": {
+                            "201": {
+                                "description": "Device created",
+                                "content": {"application/json": {"schema": component_ref("Device")}},
+                            }
+                        },
+                    }
+                },
+            },
+            {
+                "schemas": {
+                    "Recipient": SCHEMA_WITH_ID,
+                    "DeviceDetails": {
+                        "type": "object",
+                        "properties": {"name": {"type": "string"}, "recipient_id": component_ref("Recipient")},
+                        "required": ["name", "recipient_id"],
+                    },
+                    "Device": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string"},
+                            "name": {"type": "string"},
+                            "recipient_id": {"type": "string"},
+                        },
+                        "required": ["id"],
+                    },
+                }
+            },
+            id="requestbody-multiple-content-types-same-schema",
+        ),
+        pytest.param(
+            {
+                "/devices": {
+                    "post": {
+                        "operationId": "createDevice",
+                        "requestBody": {"content": {";invalid/media-type=malformed": {"schema": SCHEMA_WITH_ID}}},
+                        "responses": {
+                            "201": {
+                                "description": "Device created",
+                                "content": {"application/json": {"schema": SCHEMA_WITH_ID}},
+                            }
+                        },
+                    }
+                }
+            },
+            None,
+            id="requestbody-invalid-media-type-key",
+        ),
     ],
 )
 def test_dependency_graph(request, ctx, paths, components, snapshot_json):
@@ -1252,6 +1492,112 @@ def test_schema_inference_discovers_state_corruption(cli, app_runner, snapshot_c
                 products[product_id]["price"] = float(data["price"])
 
         return "", 204
+
+    port = app_runner.run_flask_app(app)
+
+    assert (
+        cli.run(
+            "--max-examples=10",
+            "-c response_schema_conformance",
+            f"http://127.0.0.1:{port}/openapi.json",
+            "--phases=stateful",
+        )
+        == snapshot_cli
+    )
+
+
+@pytest.mark.snapshot(replace_reproduce_with=True)
+def test_stateful_discovers_requestbody_dependency_bug(cli, app_runner, snapshot_cli, ctx):
+    order_response_schema = {
+        "type": "object",
+        "properties": {
+            "id": {"type": "string"},
+            "customer_id": {"type": "string"},
+            "total": {"type": "number"},
+        },
+        "required": ["id", "customer_id", "total"],
+    }
+
+    schema = ctx.openapi.build_schema(
+        {
+            "/customers": {
+                "post": {
+                    "operationId": "createCustomer",
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {"name": {"type": "string"}},
+                                    "required": ["name"],
+                                }
+                            }
+                        }
+                    },
+                    "responses": {
+                        "201": {
+                            "description": "Customer created",
+                            "content": {"application/json": {"schema": SCHEMA_WITH_ID}},
+                        }
+                    },
+                }
+            },
+            "/orders": {
+                "post": {
+                    "operationId": "createOrder",
+                    "requestBody": {"content": {"application/json": {"schema": ORDER_REQUEST_WITH_CUSTOMER}}},
+                    "responses": {
+                        "201": {
+                            "description": "Order created",
+                            "content": {"application/json": {"schema": order_response_schema}},
+                        }
+                    },
+                }
+            },
+        }
+    )
+
+    app = Flask(__name__)
+    customers = {}
+    next_customer_id = 1
+    next_order_id = 1
+
+    @app.route("/openapi.json")
+    def get_schema():
+        return jsonify(schema)
+
+    @app.route("/customers", methods=["POST"])
+    def create_customer():
+        nonlocal next_customer_id
+        data = request.get_json() or {}
+
+        customer_id = str(next_customer_id)
+        next_customer_id += 1
+
+        customers[customer_id] = {"id": customer_id, "name": data.get("name", "Unknown")}
+
+        return jsonify({"id": customer_id}), 201
+
+    @app.route("/orders", methods=["POST"])
+    def create_order():
+        nonlocal next_order_id
+        data = request.get_json() or {}
+
+        customer_id = data.get("customer_id")
+        order_id = str(next_order_id)
+        next_order_id += 1
+
+        # Bug: When customer_id is exists, we return total as string instead of number
+        if customer_id in customers:
+            return jsonify(
+                {
+                    "id": order_id,
+                    "customer_id": customer_id,
+                    "total": str(data.get("total", 0)),
+                }
+            ), 201
+
+        return jsonify({"detail": "Customer does not exist"}), 404
 
     port = app_runner.run_flask_app(app)
 
