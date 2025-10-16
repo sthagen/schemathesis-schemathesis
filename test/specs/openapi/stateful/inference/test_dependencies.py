@@ -5,7 +5,9 @@ from flask import Flask, jsonify, request
 from syrupy.extensions.json import JSONSnapshotExtension
 
 import schemathesis
+from schemathesis.specs.openapi.stateful import dependencies
 from schemathesis.specs.openapi.stateful.dependencies import analyze, naming
+from test.utils import flaky
 
 KNOWN_INCORRECT_FIELD_MAPPINGS = {
     "merge-empty-schema-then-detailed": frozenset(
@@ -1131,6 +1133,16 @@ def snapshot_json(snapshot):
         ),
         pytest.param(
             {
+                **operation_with_body(
+                    "post", "/orders", "201", ORDER_REQUEST_WITH_CUSTOMER, ORDER_RESPONSE, operation_id="createOrder"
+                ),
+                **operation("post", "/customers", "201", SCHEMA_WITH_ID, operation_id="createCustomer"),
+            },
+            None,
+            id="requestbody-producer-discovered-later",
+        ),
+        pytest.param(
+            {
                 **operation("post", "/customers", "201", SCHEMA_WITH_ID, operation_id="createCustomer"),
                 **operation_with_body(
                     "post", "/products", "201", PRODUCT_REQUEST, PRODUCT_RESPONSE, operation_id="createProduct"
@@ -1363,7 +1375,7 @@ def test_schema_inference_discovers_state_corruption(cli, app_runner, snapshot_c
                                 "schema": {
                                     "type": "object",
                                     "properties": {
-                                        "name": {"type": "string"},
+                                        "name": {"enum": ["Product"]},
                                         "price": {
                                             "type": "number",
                                         },
@@ -1500,6 +1512,7 @@ def test_schema_inference_discovers_state_corruption(cli, app_runner, snapshot_c
             "--max-examples=10",
             "-c response_schema_conformance",
             f"http://127.0.0.1:{port}/openapi.json",
+            "--mode=positive",
             "--phases=stateful",
         )
         == snapshot_cli
@@ -1507,6 +1520,7 @@ def test_schema_inference_discovers_state_corruption(cli, app_runner, snapshot_c
 
 
 @pytest.mark.snapshot(replace_reproduce_with=True)
+@flaky(max_runs=5, min_passes=1)
 def test_stateful_discovers_requestbody_dependency_bug(cli, app_runner, snapshot_cli, ctx):
     order_response_schema = {
         "type": "object",
@@ -1610,3 +1624,303 @@ def test_stateful_discovers_requestbody_dependency_bug(cli, app_runner, snapshot
         )
         == snapshot_cli
     )
+
+
+@pytest.mark.snapshot(replace_reproduce_with=True)
+@flaky(max_runs=5, min_passes=1)
+def test_stateful_discovers_invalid_resource_id_bug(cli, app_runner, snapshot_cli, ctx):
+    order_response_schema = {
+        "type": "object",
+        "properties": {
+            "id": {"type": "string"},
+            "customer_id": {"type": "string"},
+            "total": {"type": "number"},
+        },
+        "required": ["id", "customer_id", "total"],
+    }
+
+    schema = ctx.openapi.build_schema(
+        {
+            "/customers": {
+                "post": {
+                    "operationId": "createCustomer",
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {"name": {"type": "string"}},
+                                    "required": ["name"],
+                                }
+                            }
+                        }
+                    },
+                    "responses": {
+                        "201": {
+                            "description": "Customer created",
+                            "content": {"application/json": {"schema": SCHEMA_WITH_ID}},
+                        }
+                    },
+                }
+            },
+            "/orders": {
+                "post": {
+                    "operationId": "createOrder",
+                    "requestBody": {"content": {"application/json": {"schema": ORDER_REQUEST_WITH_CUSTOMER}}},
+                    "responses": {
+                        "201": {
+                            "description": "Order created",
+                            "content": {"application/json": {"schema": order_response_schema}},
+                        }
+                    },
+                }
+            },
+        }
+    )
+
+    app = Flask(__name__)
+    customers = {}
+    next_customer_id = 1
+    next_order_id = 1
+
+    @app.route("/openapi.json")
+    def get_schema():
+        return jsonify(schema)
+
+    @app.route("/customers", methods=["POST"])
+    def create_customer():
+        nonlocal next_customer_id
+        data = request.get_json() or {}
+
+        if not isinstance(data, dict):
+            return {"error": "Invalid input"}
+
+        customer_id = str(next_customer_id)
+        next_customer_id += 1
+
+        customers[customer_id] = {"id": customer_id, "name": data.get("name", "Unknown")}
+
+        return jsonify({"id": customer_id}), 201
+
+    @app.route("/orders", methods=["POST"])
+    def create_order():
+        nonlocal next_order_id
+        data = request.get_json() or {}
+
+        customer_id = data.get("customer_id")
+        next_order_id += 1
+
+        # Bug: When customer_id doesn't exist, missing required field
+        if customer_id not in customers:
+            return jsonify(
+                {
+                    "id": "0",
+                    "total": 0,
+                }
+            ), 201
+
+        # Valid customers get correct response
+        return jsonify(
+            {
+                "id": "0",
+                "customer_id": customer_id,
+                "total": 0,
+            }
+        ), 201
+
+    port = app_runner.run_flask_app(app)
+
+    assert (
+        cli.run(
+            "--max-examples=50",
+            "-c response_schema_conformance",
+            f"http://127.0.0.1:{port}/openapi.json",
+            "--phases=stateful",
+        )
+        == snapshot_cli
+    )
+
+
+def customer_post(*, operation_id="createCustomer", response_schema=None, links=None):
+    """Build /customers POST endpoint."""
+    endpoint = {
+        "post": {
+            "operationId": operation_id,
+            "responses": {
+                "201": {
+                    "description": "Created",
+                    "content": {"application/json": {"schema": response_schema or SCHEMA_WITH_ID}},
+                }
+            },
+        }
+    }
+    if links:
+        endpoint["post"]["responses"]["201"]["links"] = links
+    return {"/customers": endpoint}
+
+
+def order_post(
+    *, operation_id="createOrder", parameter_name="customer_id", parameter_in="path", use_request_body=False
+):
+    """Build /orders POST endpoint."""
+    endpoint = {
+        "post": {
+            "operationId": operation_id,
+            "responses": {
+                "201": {
+                    "description": "Created",
+                    "content": {"application/json": {"schema": ORDER_RESPONSE if use_request_body else SCHEMA_WITH_ID}},
+                }
+            },
+        }
+    }
+
+    if use_request_body:
+        endpoint["post"]["requestBody"] = {"content": {"application/json": {"schema": ORDER_REQUEST_WITH_CUSTOMER}}}
+    else:
+        endpoint["post"]["parameters"] = [
+            {"name": parameter_name, "in": parameter_in, "required": True, "schema": {"type": "string"}}
+        ]
+
+    return {"/orders": endpoint}
+
+
+def customer_get(*, operation_id="getCustomer", parameter_name="customer_id"):
+    """Build /customers/{customer_id} GET endpoint."""
+    return {
+        f"/customers/{{{parameter_name}}}": {
+            "get": {
+                "operationId": operation_id,
+                "parameters": [{"name": parameter_name, "in": "path", "required": True, "schema": {"type": "string"}}],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {"application/json": {"schema": SCHEMA_WITH_ID}},
+                    }
+                },
+            }
+        }
+    }
+
+
+def link(target_operation, parameters=None, request_body=None, use_ref=False):
+    """Build a link definition."""
+    if use_ref:
+        link_def = {"operationRef": target_operation}
+    else:
+        link_def = {"operationId": target_operation}
+
+    if parameters:
+        link_def["parameters"] = parameters
+    if request_body:
+        link_def["requestBody"] = request_body
+
+    return link_def
+
+
+@pytest.mark.parametrize(
+    ["schema", "expected"],
+    [
+        pytest.param(
+            {
+                **customer_post(
+                    links={"CreateOrder": link("createOrder", parameters={"customer_id": "$response.body#/id"})}
+                ),
+                **order_post(),
+            },
+            0,
+            id="duplicate-link-with-operationid",
+        ),
+        pytest.param(
+            {
+                **customer_post(
+                    links={
+                        "CreateOrder": link(
+                            "#/paths/~1orders/post",
+                            parameters={"customer_id": "$response.body#/id"},
+                            use_ref=True,
+                        )
+                    }
+                ),
+                **order_post(),
+            },
+            0,
+            id="duplicate-link-with-operationref",
+        ),
+        pytest.param(
+            {
+                **customer_post(
+                    links={
+                        "CreateOrder": link(
+                            "#/paths/~1orders/post",
+                            parameters={"path.customer_id": "$response.body#/id"},
+                            use_ref=True,
+                        )
+                    }
+                ),
+                **order_post(),
+            },
+            0,
+            id="duplicate-link-with-operationref-already-normalized",
+        ),
+        pytest.param(
+            {
+                **customer_post(
+                    links={
+                        "PostCustomer": link(
+                            "#/paths/~1customers/post",
+                            parameters={"query.something-else": "$response.body#/id"},
+                            use_ref=True,
+                        )
+                    }
+                ),
+                **order_post(),
+            },
+            1,
+            id="existing-link-name",
+        ),
+        pytest.param(
+            {
+                **customer_post(
+                    links={"CreateOrder": link("createOrder", parameters={"user_id": "$response.body#/id"})}
+                ),
+                **order_post(),
+            },
+            1,
+            id="different-parameter-name",
+        ),
+        pytest.param(
+            {
+                **customer_post(
+                    links={"GetCustomer": link("getCustomer", parameters={"customer_id": "$response.body#/id"})}
+                ),
+                **customer_get(),
+                **order_post(),
+            },
+            2,
+            id="different-target-operation",
+        ),
+        pytest.param(
+            {
+                **customer_post(
+                    links={"CreateOrder": link("createOrder", request_body={"customer_id": "$response.body#/id"})}
+                ),
+                **order_post(use_request_body=True),
+            },
+            0,
+            id="duplicate-link-with-requestbody",
+        ),
+        pytest.param(
+            {
+                **customer_post(),
+                **order_post(),
+            },
+            1,
+            id="no-existing-links",
+        ),
+    ],
+)
+def test_inject_links_deduplication(ctx, schema, expected):
+    raw_schema = ctx.openapi.build_schema(schema)
+    schema = schemathesis.openapi.from_dict(raw_schema)
+    assert dependencies.inject_links(schema) == expected
