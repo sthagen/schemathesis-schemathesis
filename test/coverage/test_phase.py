@@ -2041,6 +2041,74 @@ def failed(ctx, response, case):
         )
 
 
+@pytest.mark.openapi_version("3.0")
+def test_avoid_testing_unexpected_methods(ctx):
+    raw_schema = {
+        "/foo": {
+            "post": {
+                "parameters": [{"in": "query", "name": "key", "schema": {"type": "integer"}}],
+                "responses": {"200": {"description": "OK"}},
+            },
+            "get": {
+                "responses": {"200": {"description": "OK"}},
+            },
+        }
+    }
+    schema = ctx.openapi.build_schema(raw_schema)
+
+    schema = schemathesis.openapi.from_dict(schema)
+
+    methods = set()
+    operation = schema["/foo"]["post"]
+
+    def test(case):
+        if case.meta.phase.name != TestPhase.COVERAGE:
+            return
+        if not case.meta.phase.data.description.startswith("Unspecified"):
+            return
+        methods.add(case.method)
+        assert f"-X {case.method}" in case.as_curl_command()
+
+    run_negative_test(operation, test, unexpected_methods=set())
+
+    assert not methods
+
+
+@pytest.mark.openapi_version("3.0")
+def test_avoid_testing_unexpected_methods_in_cli(ctx, cli, snapshot_cli, openapi3_base_url):
+    raw_schema = {
+        "/foo": {
+            "post": {
+                "parameters": [{"in": "query", "name": "key", "schema": {"type": "integer"}}],
+                "responses": {"200": {"description": "OK"}},
+            },
+            "get": {
+                "responses": {"200": {"description": "OK"}},
+            },
+        }
+    }
+    schema_path = ctx.openapi.write_schema(raw_schema)
+
+    assert (
+        cli.main(
+            "run",
+            str(schema_path),
+            "--checks=unsupported_method",
+            f"--url={openapi3_base_url}",
+            "--phases=coverage",
+            "--mode=negative",
+            config={
+                "phases": {
+                    "coverage": {
+                        "unexpected-methods": [],
+                    }
+                },
+            },
+        )
+        == snapshot_cli
+    )
+
+
 def test_missing_authorization(ctx, cli, snapshot_cli, openapi3_base_url):
     # The reproduction code should not contain auth if it is explicitly specified
     schema_path = ctx.openapi.write_schema(
@@ -2142,10 +2210,6 @@ def _request_body(inner):
             }
         }
     }
-
-
-def _schemas(inner):
-    return {}
 
 
 @pytest.mark.parametrize(

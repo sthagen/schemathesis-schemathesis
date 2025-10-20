@@ -5,7 +5,7 @@
         {
           "parameter_location": "path",
           "parameter_name": "id",
-          "resource": "Read",
+          "resource": "Comment",
           "resource_field": "id"
         }
       ],
@@ -20,10 +20,26 @@
     }
   },
   "resources": {
+    "Comment": {
+      "fields": [
+        "id"
+      ],
+      "types": {}
+    },
     "Read": {
       "fields": [
         "id"
-      ]
+      ],
+      "types": {
+        "id": [
+          "array",
+          "boolean",
+          "null",
+          "number",
+          "object",
+          "string"
+        ]
+      }
     }
   }
 }

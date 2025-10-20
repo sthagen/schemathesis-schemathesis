@@ -1,10 +1,49 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.3.3...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.3.7...HEAD) - TBD
+
+### :wrench: Changed
+
+- Display mutation metadata in `negative_data_rejection` failures if available. Currently, only available for the coverage phase.
+
+## [4.3.7](https://github.com/schemathesis/schemathesis/compare/v4.3.6...v4.3.7) - 2025-10-20
+
+### :bug: Fixed
+
+- Properly fix an empty list to `phases.coverage.unexpected-methods` disabling testing of unexpected HTTP methods.
+- Import all checks inside `Case.validate_response`. It is relevant for manually constructing `Case` instances outside of Schemathesis tests. [#3184](https://github.com/schemathesis/schemathesis/discussions/3184)
+
+### :wrench: Changed
+
+- Infer subresource dependencies in responses.
+- Avoid creating resources that are not objects.
+
+## [4.3.6](https://github.com/schemathesis/schemathesis/compare/v4.3.5...v4.3.6) - 2025-10-20
+
+### :wrench: Changed
+
+- Support inference of dependencies from listings to subresources (`GET /orders` -> `GET /orders/{id}/notes`).
+
+## [4.3.5](https://github.com/schemathesis/schemathesis/compare/v4.3.4...v4.3.5) - 2025-10-19
+
+### :bug: Fixed
+
+- Setting an empty list to `phases.coverage.unexpected-methods` will disable testing of unexpected HTTP methods.
+- Schema bundler to correctly detect unbreakable indirect recursive cycles instead of failing with `RecursionError`.
+
+### :wrench: Changed
+
+- Display extraction failures for `requestBody` in explicit links.
+- If `requestBody` is optional, choose empty body only in 5% of cases (instead of 50%).
+- Add matching required fields from known resources during dependency analysis.
+- Improve deduplication of inferred links.
+
+## [4.3.4](https://github.com/schemathesis/schemathesis/compare/v4.3.3...v4.3.4) - 2025-10-17
 
 ### :wrench: Changed
 
 - Deduplicate explicit and inferred links.
+- Do not report extraction failures for inferred links.
 
 ## [4.3.3](https://github.com/schemathesis/schemathesis/compare/v4.3.2...v4.3.3) - 2025-10-15
 

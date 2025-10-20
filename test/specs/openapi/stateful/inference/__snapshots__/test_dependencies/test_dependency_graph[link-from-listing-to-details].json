@@ -1,0 +1,55 @@
+{
+  "operations": {
+    "GET /books/": {
+      "inputs": [],
+      "outputs": [
+        {
+          "cardinality": "MANY",
+          "pointer": "/",
+          "resource": "Book",
+          "status_code": "200"
+        }
+      ]
+    },
+    "GET /books/{id}/notes": {
+      "inputs": [
+        {
+          "parameter_location": "path",
+          "parameter_name": "id",
+          "resource": "Book",
+          "resource_field": "id"
+        }
+      ],
+      "outputs": [
+        {
+          "cardinality": "ONE",
+          "pointer": "/",
+          "resource": "Note",
+          "status_code": "200"
+        }
+      ]
+    }
+  },
+  "resources": {
+    "Book": {
+      "fields": [
+        "id"
+      ],
+      "types": {
+        "id": [
+          "string"
+        ]
+      }
+    },
+    "Note": {
+      "fields": [
+        "id"
+      ],
+      "types": {
+        "id": [
+          "string"
+        ]
+      }
+    }
+  }
+}

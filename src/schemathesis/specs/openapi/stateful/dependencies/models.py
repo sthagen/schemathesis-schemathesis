@@ -58,7 +58,7 @@ class DependencyGraph:
                     links: dict[str, LinkDefinition] = {}
                     for input_slot in consumer.inputs:
                         if input_slot.resource is output_slot.resource:
-                            body_pointer = build_response_body_pointer(
+                            body_pointer = extend_pointer(
                                 output_slot.pointer, input_slot.resource_field, output_slot.cardinality
                             )
                             link_name = f"{consumer.method.capitalize()}{input_slot.resource.name}"
@@ -73,6 +73,11 @@ class DependencyGraph:
                                 parameters = {
                                     f"{input_slot.parameter_location.value}.{input_slot.parameter_name}": f"$response.body#{body_pointer}",
                                 }
+                            existing = links.get(link_name)
+                            if existing is not None:
+                                existing.parameters.update(parameters)
+                                existing.request_body.update(request_body)
+                                continue
                             links[link_name] = LinkDefinition(
                                 operation_ref=f"#/paths/{consumer_path}/{consumer.method}",
                                 parameters=parameters,
@@ -122,14 +127,14 @@ class DependencyGraph:
                     raise AssertionError(message)
 
 
-def build_response_body_pointer(pointer: str, field: str, cardinality: Cardinality) -> str:
-    if not pointer.endswith("/"):
-        pointer += "/"
+def extend_pointer(base: str, field: str, cardinality: Cardinality) -> str:
+    if not base.endswith("/"):
+        base += "/"
     if cardinality == Cardinality.MANY:
         # For arrays, reference first element: /data → /data/0
-        pointer += "0/"
-    pointer += encode_pointer(field)
-    return pointer
+        base += "0/"
+    base += encode_pointer(field)
+    return base
 
 
 @dataclass
@@ -155,12 +160,13 @@ class LinkDefinition:
         """Convert to OpenAPI Links format."""
         links: dict[str, Any] = {
             "operationRef": self.operation_ref,
+            SCHEMATHESIS_LINK_EXTENSION: {"is_inferred": True},
         }
         if self.parameters:
             links["parameters"] = self.parameters
         if self.request_body:
             links["requestBody"] = self.request_body
-            links[SCHEMATHESIS_LINK_EXTENSION] = {"merge_body": True}
+            links[SCHEMATHESIS_LINK_EXTENSION]["merge_body"] = True
         return links
 
 
@@ -266,18 +272,20 @@ class ResourceDefinition:
     name: str
     # A sorted list of resource fields
     fields: list[str]
+    # Field types mapping
+    types: dict[str, set[str]]
     # How this resource was created
     source: DefinitionSource
 
-    __slots__ = ("name", "fields", "source")
+    __slots__ = ("name", "fields", "types", "source")
 
     @classmethod
     def without_properties(cls, name: str) -> ResourceDefinition:
-        return cls(name=name, fields=[], source=DefinitionSource.SCHEMA_WITHOUT_PROPERTIES)
+        return cls(name=name, fields=[], types={}, source=DefinitionSource.SCHEMA_WITHOUT_PROPERTIES)
 
     @classmethod
     def inferred_from_parameter(cls, name: str, parameter_name: str) -> ResourceDefinition:
-        return cls(name=name, fields=[parameter_name], source=DefinitionSource.PARAMETER_INFERENCE)
+        return cls(name=name, fields=[parameter_name], types={}, source=DefinitionSource.PARAMETER_INFERENCE)
 
 
 class DefinitionSource(enum.IntEnum):

@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, Iterator, Mapping, cast
 
 from schemathesis.core.errors import InfiniteRecursiveReference
 from schemathesis.core.jsonschema.bundler import BundleError
+from schemathesis.core.jsonschema.types import get_type
 from schemathesis.specs.openapi.adapter.parameters import resource_name_from_ref
 from schemathesis.specs.openapi.adapter.references import maybe_resolve
 from schemathesis.specs.openapi.stateful.dependencies import naming
@@ -14,6 +15,7 @@ from schemathesis.specs.openapi.stateful.dependencies.models import (
     DefinitionSource,
     ResourceDefinition,
     ResourceMap,
+    extend_pointer,
 )
 from schemathesis.specs.openapi.stateful.dependencies.naming import from_path
 from schemathesis.specs.openapi.stateful.dependencies.schemas import (
@@ -143,6 +145,27 @@ def iter_resources_from_response(
         else:
             pointer = unwrapped.pointer
         yield ExtractedResource(resource=resource, cardinality=cardinality, pointer=pointer)
+        # Look for sub-resources
+        properties = unwrapped.schema.get("properties")
+        if isinstance(properties, dict):
+            for field, subschema in properties.items():
+                if isinstance(subschema, dict):
+                    reference = subschema.get("$ref")
+                    if isinstance(reference, str):
+                        result = _extract_resource_and_cardinality(
+                            schema=subschema,
+                            path=path,
+                            resources=resources,
+                            updated_resources=updated_resources,
+                            resolver=resolver,
+                            parent_ref=reference,
+                        )
+                        if result is not None:
+                            subresource, cardinality = result
+                            subresource_pointer = extend_pointer(pointer, field, cardinality=cardinality)
+                            yield ExtractedResource(
+                                resource=subresource, cardinality=cardinality, pointer=subresource_pointer
+                            )
 
 
 def _recover_ref_from_allof(*, branches: list[dict], pointer: str, resolver: RefResolver) -> str | None:
@@ -263,20 +286,27 @@ def _extract_resource_from_schema(
     if resource is None or resource.source < DefinitionSource.SCHEMA_WITH_PROPERTIES:
         _, resolved = maybe_resolve(schema, resolver, "")
 
+        if "type" in resolved and resolved["type"] != "object" and "properties" not in resolved:
+            # Skip strings, etc
+            return None
+
         properties = resolved.get("properties")
         if properties:
-            fields = list(properties)
+            fields = sorted(properties)
+            types = {field: set(get_type(subschema)) for field, subschema in properties.items()}
             source = DefinitionSource.SCHEMA_WITH_PROPERTIES
         else:
             fields = []
+            types = {}
             source = DefinitionSource.SCHEMA_WITHOUT_PROPERTIES
         if resource is not None:
             if resource.source < source:
                 resource.source = source
                 resource.fields = fields
+                resource.types = types
                 updated_resources.add(resource_name)
         else:
-            resource = ResourceDefinition(name=resource_name, fields=fields, source=source)
+            resource = ResourceDefinition(name=resource_name, fields=fields, types=types, source=source)
             resources[resource_name] = resource
 
     return resource
