@@ -1,10 +1,20 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.3.7...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.3.9...HEAD) - TBD
+
+## [4.3.9](https://github.com/schemathesis/schemathesis/compare/v4.3.8...v4.3.9) - 2025-10-21
+
+### :bug: Fixed
+
+- Missing required request body for some schemas during the coverage phase.
+- Adjust some schemas so `hypothesis-jsonschema` can generate data for them.
+
+## [4.3.8](https://github.com/schemathesis/schemathesis/compare/v4.3.7...v4.3.8) - 2025-10-21
 
 ### :wrench: Changed
 
 - Display mutation metadata in `negative_data_rejection` failures if available. Currently, only available for the coverage phase.
+- Support `items` inside `requestBody` during dependency inference.
 
 ## [4.3.7](https://github.com/schemathesis/schemathesis/compare/v4.3.6...v4.3.7) - 2025-10-20
 
