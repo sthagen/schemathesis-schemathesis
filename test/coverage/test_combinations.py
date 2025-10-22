@@ -1097,6 +1097,16 @@ def test_negative_pattern_with_incompatible_length(nctx):
     assert_not_conform(covered, schema)
 
 
+def test_negative_multiple_types(nctx):
+    schema = {"type": ["integer", "number", "string"]}
+    assert not cover_schema(nctx, schema)
+
+
+def test_positive_multiple_types(pctx):
+    schema = {"type": ["string", "null"], "format": "date-time"}
+    assert cover_schema(pctx, schema) == ["", None]
+
+
 @pytest.mark.parametrize(
     ("schema", "expected"),
     [

@@ -1,6 +1,18 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.3.9...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.3.10...HEAD) - TBD
+
+## [4.3.10](https://github.com/schemathesis/schemathesis/compare/v4.3.9...v4.3.10) - 2025-10-22
+
+### :bug: Fixed
+
+- Internal error when generating invalid type in the coverage phase.
+- Internal error when generating valid instance against an array of types in the coverage phase. [#3194](https://github.com/schemathesis/schemathesis/issues/3194)
+- Missing required request body for schemas without validation keywords.
+
+### :wrench: Changed
+
+- Improve resources inference.
 
 ## [4.3.9](https://github.com/schemathesis/schemathesis/compare/v4.3.8...v4.3.9) - 2025-10-21
 

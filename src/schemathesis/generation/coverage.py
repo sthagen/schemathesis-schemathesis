@@ -8,6 +8,7 @@ from functools import lru_cache, partial
 from itertools import combinations
 
 from schemathesis.core.jsonschema.bundler import BUNDLE_STORAGE_KEY
+from schemathesis.core.jsonschema.keywords import ALL_KEYWORDS
 
 try:
     from json.encoder import _make_iterencode  # type: ignore[attr-defined]
@@ -74,6 +75,14 @@ STRATEGIES_FOR_TYPE = {
     "array": ARRAY_STRATEGY,
     "object": OBJECT_STRATEGY,
 }
+
+
+def get_strategy_for_type(ty: str | list[str]) -> st.SearchStrategy:
+    if isinstance(ty, str):
+        return STRATEGIES_FOR_TYPE[ty]
+    return st.one_of(STRATEGIES_FOR_TYPE[t] for t in ty if t in STRATEGIES_FOR_TYPE)
+
+
 FORMAT_STRATEGIES = {**BUILT_IN_STRING_FORMATS, **get_default_format_strategies(), **STRING_FORMATS}
 
 UNKNOWN_PROPERTY_KEY = "x-schemathesis-unknown-property"
@@ -269,11 +278,11 @@ class CoverageContext:
         if isinstance(schema, bool):
             return 0
         keys = sorted([k for k in schema if not k.startswith("x-") and k not in ["description", "example", "examples"]])
-        if keys == ["type"] and isinstance(schema["type"], str) and schema["type"] in STRATEGIES_FOR_TYPE:
-            return cached_draw(STRATEGIES_FOR_TYPE[schema["type"]])
+        if keys == ["type"]:
+            return cached_draw(get_strategy_for_type(schema["type"]))
         if keys == ["format", "type"]:
             if schema["type"] != "string":
-                return cached_draw(STRATEGIES_FOR_TYPE[schema["type"]])
+                return cached_draw(get_strategy_for_type(schema["type"]))
             elif schema["format"] in FORMAT_STRATEGIES:
                 return cached_draw(FORMAT_STRATEGIES[schema["format"]])
         if (keys == ["maxLength", "minLength", "type"] or keys == ["maxLength", "type"]) and schema["type"] == "string":
@@ -505,12 +514,14 @@ def cover_schema_iter(
             # Can't resolve a reference - at this point, we can't generate anything useful as `$ref` is in the current schema root
             return
 
-    if schema == {} or schema is True:
+    if schema is True:
         types = ["null", "boolean", "string", "number", "array", "object"]
         schema = {}
     elif schema is False:
         types = []
         schema = {"not": {}}
+    elif not any(k in ALL_KEYWORDS for k in schema):
+        types = ["null", "boolean", "string", "number", "array", "object"]
     else:
         types = schema.get("type", [])
     push_examples_to_properties(schema)
@@ -1320,7 +1331,7 @@ def _negative_type(
     }.get(ctx.location)
 
     if "number" in types:
-        del strategies["integer"]
+        strategies.pop("integer", None)
     if "integer" in types:
         strategies["number"] = FLOAT_STRATEGY.filter(_is_non_integer_float)
     if ctx.location == ParameterLocation.QUERY:
