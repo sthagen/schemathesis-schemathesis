@@ -16,25 +16,27 @@ Schemathesis dev
 
      Supports NULL byte in headers:    ✘
 
- ✅  Examples (in 0.00s)
+ ⏭   Examples (in 0.00s)
 
-     ✅ 1 passed
+     ⏭  1 skipped
 
 =================================== SUMMARY ====================================
 
 API Operations:
   Selected: 1/1
-  Tested: 1
+  Tested: 0
+  Skipped: 1
+    - No examples in schema
 
 Test Phases:
-  ✅ Examples
+  ⏭  Examples
   ⏭  Coverage (disabled)
   ⏭  Fuzzing (disabled)
   ⏭  Stateful (disabled)
 
 Test cases:
-  N generated, N passed
+  No test cases were generated
 
 Seed: 42
 
-=========================== No issues found in 1.00s ===========================
+=============================== Empty test suite ===============================

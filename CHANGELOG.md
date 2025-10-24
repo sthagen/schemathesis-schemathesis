@@ -1,10 +1,19 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.3.10...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.3.11...HEAD) - TBD
+
+## [4.3.11](https://github.com/schemathesis/schemathesis/compare/v4.3.10...v4.3.11) - 2025-10-24
 
 ### :bug: Fixed
 
-- Tomli dependency is optional for Python 3.11+. [#3199](https://github.com/schemathesis/schemathesis/issues/3199)
+- Do not conservatively consider all recursive references as infinite ones in the examples phase.
+- Mishandled a case of infinite recursion in the example phase.
+- Improve API spec detection for malformed JSON inputs.
+- Internal error on empty `allOf` in the examples phase.
+
+### :wrench: Changed
+
+- Make `tomli` optional for Python 3.11+. [#3199](https://github.com/schemathesis/schemathesis/issues/3199)
 
 ## [4.3.10](https://github.com/schemathesis/schemathesis/compare/v4.3.9...v4.3.10) - 2025-10-22
 
