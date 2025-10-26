@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 import pytest
 from flask import Flask, jsonify, request
 from syrupy.extensions.json import JSONSnapshotExtension
@@ -375,6 +377,82 @@ def snapshot_json(snapshot):
             },
             None,
             id="array-response-with-true",
+        ),
+        pytest.param(
+            {
+                "/search": {
+                    "get": {
+                        "parameters": [
+                            {
+                                "in": "query",
+                                "name": "user_guid",
+                                "schema": {"type": "string"},
+                            },
+                        ]
+                    }
+                },
+                "/profile": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "$ref": "#/components/schemas/User",
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+            },
+            {"schemas": {"User": {"properties": {"guid": {"type": "string"}}}}},
+            id="field-name-suffix",
+        ),
+        pytest.param(
+            {
+                "/something": {
+                    "post": {
+                        "responses": {
+                            "200": {
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "$ref": "#/components/schemas/Category",
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "/categories/{id}.json": {
+                    "delete": {
+                        "responses": {
+                            "200": {
+                                "description": "Ok",
+                            }
+                        }
+                    }
+                },
+            },
+            {
+                "schemas": {
+                    "Category": {
+                        "properties": {
+                            "category": component_ref("CategoryFields"),
+                        }
+                    },
+                    "CategoryFields": {
+                        "properties": {
+                            "id": {"type": "integer"},
+                        },
+                        "type": "object",
+                    },
+                }
+            },
+            id="field-as-resource-name",
         ),
         pytest.param(
             {
@@ -1343,6 +1421,20 @@ def snapshot_json(snapshot):
             {"schemas": {"Tag": SCHEMA_WITH_ID}},
             id="array-input",
         ),
+        pytest.param(
+            {
+                **operation("post", "/items", "201", SCHEMA_WITH_ID),
+                **operation(
+                    "get",
+                    "/items/search",
+                    "200",
+                    SCHEMA_WITH_ID,
+                    [{"name": "itemId", "in": "query", "required": True, "schema": {"type": "string"}}],
+                ),
+            },
+            None,
+            id="query-parameter-consumer",
+        ),
     ],
 )
 def test_dependency_graph(request, ctx, paths, components, snapshot_json):
@@ -1635,6 +1727,119 @@ def test_schema_inference_discovers_state_corruption(cli, app_runner, snapshot_c
             "-c response_schema_conformance",
             f"http://127.0.0.1:{port}/openapi.json",
             "--mode=positive",
+            "--phases=stateful",
+        )
+        == snapshot_cli
+    )
+
+
+@pytest.mark.snapshot(replace_reproduce_with=True)
+def test_stateful_discovers_bug_with_no_body_producer_with_explicit_links_mixed_with_others(
+    cli, app_runner, snapshot_cli, ctx
+):
+    schema = ctx.openapi.build_schema(
+        {
+            "/sessions": {
+                "post": {
+                    "operationId": "createSession",
+                    "responses": {
+                        "201": {
+                            "description": "Session created",
+                            "content": {"application/json": {"schema": SCHEMA_WITH_ID}},
+                            "links": {
+                                "GetSession": {
+                                    "operationId": "getSession",
+                                    "parameters": {"sessionId": "$response.body#/id"},
+                                }
+                            },
+                        }
+                    },
+                }
+            },
+            "/sessions/{sessionId}": {
+                "get": {
+                    "operationId": "getSession",
+                    "parameters": [{"name": "sessionId", "in": "path", "required": True, "schema": {"type": "string"}}],
+                    "responses": {
+                        "200": {
+                            "content": {"application/json": {"schema": SCHEMA_WITH_ID}},
+                        },
+                        "404": {"description": "Not found"},
+                    },
+                }
+            },
+            "/workspaces": {
+                "post": {
+                    "operationId": "createWorkspace",
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {"name": {"type": "string"}},
+                                    "required": ["name"],
+                                }
+                            }
+                        },
+                        "required": True,
+                    },
+                    "responses": {
+                        "201": {
+                            "content": {"application/json": {"schema": SCHEMA_WITH_ID}},
+                            "links": {
+                                "GetWorkspace": {
+                                    "operationId": "getWorkspace",
+                                    "parameters": {"workspaceId": "$response.body#/id"},
+                                }
+                            },
+                        }
+                    },
+                }
+            },
+            "/workspaces/{workspaceId}": {
+                "get": {
+                    "operationId": "getWorkspace",
+                    "parameters": [
+                        {"name": "workspaceId", "in": "path", "required": True, "schema": {"type": "string"}}
+                    ],
+                    "responses": {
+                        "200": {
+                            "content": {"application/json": {"schema": SCHEMA_WITH_ID}},
+                        },
+                        "404": {"description": "Not found"},
+                    },
+                }
+            },
+        }
+    )
+
+    app = Flask(__name__)
+    sessions = {}
+
+    @app.route("/openapi.json")
+    def get_schema():
+        return jsonify(schema)
+
+    @app.route("/sessions", methods=["POST"])
+    def create_session():
+        session_id = str(uuid.uuid4())
+        sessions[session_id] = {"id": session_id}
+        return jsonify({"id": session_id}), 201
+
+    @app.route("/sessions/<session_id>", methods=["GET"])
+    def get_session(session_id):
+        if session_id not in sessions:
+            return "", 404
+        # Always fails with 500 for valid sessions
+        return jsonify({"error": "Internal error"}), 500
+
+    port = app_runner.run_flask_app(app)
+
+    assert (
+        cli.run(
+            "--max-examples=10",
+            "-c not_a_server_error",
+            f"http://127.0.0.1:{port}/openapi.json",
             "--phases=stateful",
         )
         == snapshot_cli
@@ -2231,6 +2436,127 @@ def test_schemathesis_stateful_finds_checksum_match_bug(cli, app_runner, snapsho
         cli.run(
             "--max-examples=10",
             "--mode=positive",
+            "-c not_a_server_error",
+            f"http://127.0.0.1:{port}/openapi.json",
+            "--phases=stateful",
+        )
+        == snapshot_cli
+    )
+
+
+@pytest.mark.snapshot(replace_reproduce_with=True)
+def test_stateful_bug_when_link_always_used(cli, app_runner, snapshot_cli, ctx):
+    item_schema = {
+        "type": "object",
+        "properties": {
+            "id": {"type": "string"},
+            "name": {"type": "string"},
+        },
+        "required": ["id", "name"],
+    }
+
+    schema = ctx.openapi.build_schema(
+        {
+            "/items": {
+                "post": {
+                    "operationId": "createItem",
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {"name": {"type": "string"}},
+                                    "required": ["name"],
+                                }
+                            }
+                        },
+                        "required": True,
+                    },
+                    "responses": {
+                        "201": {
+                            "description": "Item created",
+                            "content": {"application/json": {"schema": item_schema}},
+                            "links": {
+                                "GetItem": {
+                                    "operationId": "getItem",
+                                    "parameters": {
+                                        "id": "$response.body#/id",
+                                        # Link always provides json
+                                        "format": "json",
+                                    },
+                                }
+                            },
+                        }
+                    },
+                }
+            },
+            "/items/{id}": {
+                "get": {
+                    "operationId": "getItem",
+                    "parameters": [
+                        {"name": "id", "in": "path", "required": True, "schema": {"type": "string"}},
+                        {
+                            "name": "format",
+                            "in": "query",
+                            "required": False,
+                            "schema": {"type": "string", "enum": ["json", "xml"]},
+                        },
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Item details",
+                            "content": {"application/json": {"schema": item_schema}},
+                        },
+                        "404": {"description": "Not found"},
+                    },
+                }
+            },
+        }
+    )
+
+    app = Flask(__name__)
+    items = {}
+    next_id = 1
+
+    @app.route("/openapi.json")
+    def get_schema():
+        return jsonify(schema)
+
+    @app.route("/items", methods=["POST"])
+    def create_item():
+        nonlocal next_id
+        data = request.get_json() or {}
+
+        if not isinstance(data, dict):
+            return {"error": "Invalid input"}
+
+        item_id = str(next_id)
+        next_id += 1
+
+        items[item_id] = {
+            "id": item_id,
+            "name": data.get("name", "Item"),
+        }
+
+        return jsonify({"id": item_id, "name": items[item_id]["name"]}), 201
+
+    @app.route("/items/<item_id>", methods=["GET"])
+    def get_item(item_id):
+        if item_id not in items:
+            return "", 404
+
+        format_param = request.args.get("format", "json")
+        if format_param != "json":
+            return {"error": "xml format not implemented"}, 500
+
+        item = items[item_id]
+        return jsonify({"id": item["id"], "name": item["name"]}), 200
+
+    port = app_runner.run_flask_app(app)
+
+    assert (
+        cli.run(
+            "--max-examples=100",
             "-c not_a_server_error",
             f"http://127.0.0.1:{port}/openapi.json",
             "--phases=stateful",

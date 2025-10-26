@@ -5,7 +5,7 @@ from functools import lru_cache
 from typing import Any, Callable
 
 from schemathesis.core import NOT_SET, NotSet
-from schemathesis.core.errors import InvalidTransition, OperationNotFound, TransitionValidationError
+from schemathesis.core.errors import InvalidTransition, OperationNotFound, TransitionValidationError, format_transition
 from schemathesis.core.parameters import ParameterLocation
 from schemathesis.core.result import Err, Ok, Result
 from schemathesis.generation.stateful.state_machine import ExtractedParam, StepOutput, Transition
@@ -23,8 +23,9 @@ class NormalizedParameter:
     name: str
     expression: str
     container_name: str
+    is_required: bool
 
-    __slots__ = ("location", "name", "expression", "container_name")
+    __slots__ = ("location", "name", "expression", "container_name", "is_required")
 
 
 @dataclass(repr=False)
@@ -93,6 +94,10 @@ class OpenApiLink:
 
         self._cached_extract = lru_cache(8)(self._extract_impl)
 
+    @property
+    def full_name(self) -> str:
+        return format_transition(self.source.label, self.status_code, self.name, self.target.label)
+
     def _normalize_parameters(
         self, parameters: dict[str, str], errors: list[TransitionValidationError]
     ) -> list[NormalizedParameter]:
@@ -131,15 +136,21 @@ class OpenApiLink:
                 except Exception as exc:
                     errors.append(TransitionValidationError(str(exc)))
 
+            is_required = False
             if hasattr(self, "target"):
                 try:
                     container_name = self._get_parameter_container(location, name)
                 except TransitionValidationError as exc:
                     errors.append(exc)
                     continue
+
+                for param in self.target.iter_parameters():
+                    if param.name == name:
+                        is_required = param.is_required
+                        break
             else:
                 continue
-            result.append(NormalizedParameter(location, name, expression, container_name))
+            result.append(NormalizedParameter(location, name, expression, container_name, is_required=is_required))
         return result
 
     def _get_parameter_container(self, location: ParameterLocation | None, name: str) -> str:
@@ -158,7 +169,7 @@ class OpenApiLink:
     def _extract_impl(self, wrapper: StepOutputWrapper) -> Transition:
         output = wrapper.output
         return Transition(
-            id=f"{self.source.label} -> [{self.status_code}] {self.name} -> {self.target.label}",
+            id=self.full_name,
             parent_id=output.case.id,
             is_inferred=self.is_inferred,
             parameters=self.extract_parameters(output),
@@ -178,7 +189,9 @@ class OpenApiLink:
                 value = Ok(expressions.evaluate(parameter.expression, output))
             except Exception as exc:
                 value = Err(exc)
-            container[parameter.name] = ExtractedParam(definition=parameter.expression, value=value)
+            container[parameter.name] = ExtractedParam(
+                definition=parameter.expression, value=value, is_required=parameter.is_required
+            )
         return extracted
 
     def extract_body(self, output: StepOutput) -> ExtractedParam | None:
@@ -188,7 +201,7 @@ class OpenApiLink:
                 value = Ok(expressions.evaluate(self.body, output, evaluate_nested=True))
             except Exception as exc:
                 value = Err(exc)
-            return ExtractedParam(definition=self.body, value=value)
+            return ExtractedParam(definition=self.body, value=value, is_required=True)
         return None
 
 

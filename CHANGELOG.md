@@ -1,11 +1,28 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.3.11...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.3.13...HEAD) - TBD
+
+## [4.3.13](https://github.com/schemathesis/schemathesis/compare/v4.3.12...v4.3.13) - 2025-10-26
+
+### :bug: Fixed
+
+- Allow `POST` API operations without request bodies to be used in stateful tests when provided via explicit Open API links. [#3087](https://github.com/schemathesis/schemathesis/discussions/3087)
+- Link coverage reporting incorrectly marking parameterless links as "not applied".
+
+### :wrench: Changed
+
+- Add specification links to error messages on invalid schemas.
+- Improve dependency inference.
+
+## [4.3.12](https://github.com/schemathesis/schemathesis/compare/v4.3.11...v4.3.12) - 2025-10-25
 
 ### :wrench: Changed
 
 - Infer links based on common REST patterns.
 - Remove orphaned resources during dependency analysis.
+- Allow randomly skipping non-body links to test invalid scenarios.
+- Use `query`, `header` & `cookie` in dependency inference.
+- Increased exploration rate for optional parameters in stateful testing.
 
 ## [4.3.11](https://github.com/schemathesis/schemathesis/compare/v4.3.10...v4.3.11) - 2025-10-24
 

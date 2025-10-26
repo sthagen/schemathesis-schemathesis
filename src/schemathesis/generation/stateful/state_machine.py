@@ -37,16 +37,23 @@ class StepInput:
 
     case: Case
     transition: Transition | None  # None for initial steps
-    # Whether this transition was actually applied
+    # What parameters were actually applied
     # Data extraction failures can prevent it, as well as transitions can be skipped in some cases
     # to improve discovery of bugs triggered by non-stateful inputs during stateful testing
-    is_applied: bool
+    applied_parameters: list[str]
 
-    __slots__ = ("case", "transition", "is_applied")
+    __slots__ = ("case", "transition", "applied_parameters")
 
     @classmethod
     def initial(cls, case: Case) -> StepInput:
-        return cls(case=case, transition=None, is_applied=False)
+        return cls(case=case, transition=None, applied_parameters=[])
+
+    @property
+    def is_applied(self) -> bool:
+        # If the transition has no parameters or body, count it as applied
+        if self.transition is not None and not self.transition.parameters and self.transition.request_body is None:
+            return True
+        return bool(self.applied_parameters)
 
 
 @dataclass
@@ -69,8 +76,9 @@ class ExtractedParam:
 
     definition: Any
     value: Result[Any, Exception]
+    is_required: bool
 
-    __slots__ = ("definition", "value")
+    __slots__ = ("definition", "value", "is_required")
 
 
 @dataclass
