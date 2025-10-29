@@ -1,10 +1,19 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.3.14...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.3.15...HEAD) - TBD
+
+## [4.3.15](https://github.com/schemathesis/schemathesis/compare/v4.3.14...v4.3.15) - 2025-10-29
 
 ### :bug: Fixed
 
 - Override order for explicit transport arguments to `Case.call` and `Case.call_and_validate`.
+- Generating `required` properties when they are absent from `properties` and `additionalProperties` is set to `false`.
+
+### :wrench: Changed
+
+- Health check failure errors now show the specific parameter and its schema causing slow generation or filtering issues.
+- Allow accessing all registered check functions via `schemathesis.checks` by using a module-level `__getattr__`.
+- Improve error messages for the `unsupported_method` check.
 
 ## [4.3.14](https://github.com/schemathesis/schemathesis/compare/v4.3.13...v4.3.14) - 2025-10-28
 
