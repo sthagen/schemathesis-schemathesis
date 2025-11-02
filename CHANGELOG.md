@@ -1,6 +1,35 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.3.16...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.3.17...HEAD) - TBD
+
+### :bug: Fixed
+
+- Ignored per-operation exclusion via a config file when using `schemathesis.pytest.from_fixture`.
+
+### :wrench: Changed
+
+- Show mutation metadata in `negative_data_rejection` check for all testing phases.
+
+## [4.3.17](https://github.com/schemathesis/schemathesis/compare/v4.3.16...v4.3.17) - 2025-11-02
+
+### :rocket: Added
+
+- Python 3.14 builds.
+
+### :bug: Fixed
+
+- Config-based auth, headers, test phases and generation settings not applied when using `schemathesis.pytest.from_fixture`.
+- Support for method-based tests with `schemathesis.pytest.from_fixture`.
+- Checks not loaded when using `schemathesis.pytest.from_fixture`, causing `AttributeError` when accessing `schemathesis.checks.*`.
+
+### :wrench: Changed
+
+- Improve error messages for exceptions in custom auth providers.
+- Refactor coverage phase metadata to use type-safe enums instead of string-based checks.
+
+### :racing_car: Performance
+
+- ~30% faster fuzzing & stateful phases due to aggressive caching of data generation strategies.
 
 ## [4.3.16](https://github.com/schemathesis/schemathesis/compare/v4.3.15...v4.3.16) - 2025-10-30
 

@@ -37,7 +37,6 @@ def get_all_tests(
     *,
     schema: BaseSchema,
     test_func: Callable,
-    modes: list[HypothesisTestMode],
     settings: hypothesis.settings | None = None,
     seed: int | None = None,
     as_strategy_kwargs: Callable[[APIOperation], dict[str, Any]] | None = None,
@@ -51,11 +50,22 @@ def get_all_tests(
                 _as_strategy_kwargs = as_strategy_kwargs(operation)
             else:
                 _as_strategy_kwargs = {}
+
+            # Get modes from config for this operation
+            modes = []
+            phases = schema.config.phases_for(operation=operation)
+            if phases.examples.enabled:
+                modes.append(HypothesisTestMode.EXAMPLES)
+            if phases.fuzzing.enabled:
+                modes.append(HypothesisTestMode.FUZZING)
+            if phases.coverage.enabled:
+                modes.append(HypothesisTestMode.COVERAGE)
+
             test = create_test(
                 operation=operation,
                 test_func=test_func,
                 config=HypothesisTestConfig(
-                    settings=settings,
+                    settings=settings or schema.config.get_hypothesis_settings(operation=operation),
                     modes=modes,
                     seed=seed,
                     project=schema.config,
@@ -170,31 +180,57 @@ class LazySchema:
             else:
                 given_kwargs = {}
 
-            def wrapped_test(request: FixtureRequest) -> None:
+            def wrapped_test(*args: Any, request: FixtureRequest, **kwargs: Any) -> None:
                 """The actual test, which is executed by pytest."""
                 __tracebackhide__ = True
+
+                # Load all checks eagerly, so they are accessible inside the test function
+                from schemathesis.checks import load_all_checks
+
+                load_all_checks()
+
                 schema = get_schema(
                     request=request,
                     name=self.fixture_name,
                     test_function=test_func,
                     filter_set=self.filter_set,
                 )
-                fixtures = get_fixtures(test_func, request, given_kwargs)
+                # Check if test function is a method and inject self from request.instance
+                sig = signature(test_func)
+                if "self" in sig.parameters and request.instance is not None:
+                    fixtures = {"self": request.instance}
+                    fixtures.update(get_fixtures(test_func, request, given_kwargs))
+                else:
+                    fixtures = get_fixtures(test_func, request, given_kwargs)
                 # Changing the node id is required for better reporting - the method and path will appear there
                 node_id = request.node._nodeid
                 settings = getattr(wrapped_test, "_hypothesis_internal_use_settings", None)
 
                 def as_strategy_kwargs(_operation: APIOperation) -> dict[str, Any]:
-                    override = overrides.for_operation(config=schema.config, operation=_operation)
+                    as_strategy_kwargs: dict[str, Any] = {}
 
-                    return {location.container_name: entry for location, entry in override.items() if entry}
+                    auth = schema.config.auth_for(operation=_operation)
+                    if auth is not None:
+                        from requests.auth import _basic_auth_str
+
+                        as_strategy_kwargs["headers"] = {"Authorization": _basic_auth_str(*auth)}
+
+                    headers = schema.config.headers_for(operation=_operation)
+                    if headers:
+                        as_strategy_kwargs["headers"] = headers
+
+                    override = overrides.for_operation(config=schema.config, operation=_operation)
+                    for location, entry in override.items():
+                        if entry:
+                            as_strategy_kwargs[location.container_name] = entry
+
+                    return as_strategy_kwargs
 
                 tests = list(
                     get_all_tests(
                         schema=schema,
                         test_func=test_func,
                         settings=settings,
-                        modes=list(HypothesisTestMode),
                         as_strategy_kwargs=as_strategy_kwargs,
                         given_kwargs=given_kwargs,
                     )
@@ -213,14 +249,22 @@ class LazySchema:
                         _schema_error(subtests, result.err(), node_id)
                 subtests.item._nodeid = node_id
 
-            wrapped_test = pytest.mark.usefixtures(self.fixture_name)(wrapped_test)
-            _copy_marks(test_func, wrapped_test)
+            sig = signature(test_func)
+            if "self" in sig.parameters:
+                # For methods, wrap with staticmethod to prevent pytest from passing self
+                wrapped_test = staticmethod(wrapped_test)  # type: ignore[assignment]
+                wrapped_func = wrapped_test.__func__  # type: ignore[attr-defined]
+            else:
+                wrapped_func = wrapped_test
+
+            wrapped_func = pytest.mark.usefixtures(self.fixture_name)(wrapped_func)
+            _copy_marks(test_func, wrapped_func)
 
             # Needed to prevent a failure when settings are applied to the test function
-            wrapped_test.is_hypothesis_test = True  # type: ignore
-            wrapped_test.hypothesis = HypothesisHandle(test_func, wrapped_test, given_kwargs)  # type: ignore
+            wrapped_func.is_hypothesis_test = True  # type: ignore
+            wrapped_func.hypothesis = HypothesisHandle(test_func, wrapped_func, given_kwargs)  # type: ignore
 
-            return wrapped_test
+            return wrapped_test if "self" in sig.parameters else wrapped_func
 
         return wrapper
 
@@ -280,12 +324,18 @@ def get_schema(*, request: FixtureRequest, name: str, filter_set: FilterSet, tes
     if not isinstance(schema, BaseSchema):
         raise ValueError(f"The given schema must be an instance of BaseSchema, got: {type(schema)}")
 
-    return schema.clone(filter_set=filter_set, test_function=test_function)
+    # Merge config-based operation filters with user-provided filters
+    # This ensures operations disabled in schemathesis.toml are respected
+    merged_filter_set = schema.config.operations.filter_set_with(include=filter_set)
+
+    return schema.clone(filter_set=merged_filter_set, test_function=test_function)
 
 
 def get_fixtures(func: Callable, request: FixtureRequest, given_kwargs: dict[str, Any]) -> dict[str, Any]:
     """Load fixtures, needed for the test function."""
     sig = signature(func)
     return {
-        name: request.getfixturevalue(name) for name in sig.parameters if name != "case" and name not in given_kwargs
+        name: request.getfixturevalue(name)
+        for name in sig.parameters
+        if name not in ("case", "self") and name not in given_kwargs
     }

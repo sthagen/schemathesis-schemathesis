@@ -14,7 +14,7 @@ from schemathesis.core.failures import Failure
 from schemathesis.core.parameters import ParameterLocation
 from schemathesis.core.transport import Response
 from schemathesis.generation.case import Case
-from schemathesis.generation.meta import CoveragePhaseData, TestPhase
+from schemathesis.generation.meta import CoveragePhaseData, CoverageScenario
 from schemathesis.openapi.checks import (
     AcceptedNegativeData,
     EnsureResourceAvailability,
@@ -44,7 +44,7 @@ def is_unexpected_http_status_case(case: Case) -> bool:
     return bool(
         case.meta
         and isinstance(case.meta.phase.data, CoveragePhaseData)
-        and case.meta.phase.data.description.startswith("Unspecified HTTP method")
+        and case.meta.phase.data.scenario == CoverageScenario.UNSPECIFIED_HTTP_METHOD
     )
 
 
@@ -229,21 +229,30 @@ def negative_data_rejection(ctx: CheckContext, response: Response, case: Case) -
     ):
         extra_info = ""
         phase = case.meta.phase
-        if phase and phase.name == TestPhase.COVERAGE and isinstance(phase.data, CoveragePhaseData):
+        if phase.data.description:
             parts: list[str] = []
-            if "Missing" in phase.data.description:
+            # Special case: CoveragePhaseData descriptions for "Missing" scenarios are already complete
+            if isinstance(phase.data, CoveragePhaseData) and phase.data.scenario in (
+                CoverageScenario.MISSING_PARAMETER,
+                CoverageScenario.OBJECT_MISSING_REQUIRED_PROPERTY,
+            ):
                 extra_info = f"\nInvalid component: {phase.data.description}"
             else:
-                if phase.data.parameter:
-                    parts.append(f"parameter `{phase.data.parameter}`")
+                # Build structured message: parameter `name` in location - description
+                # For body, don't show parameter name (it's the media type, not useful)
                 location = phase.data.parameter_location
+                if phase.data.parameter and location != ParameterLocation.BODY:
+                    parts.append(f"parameter `{phase.data.parameter}`")
                 if location:
                     parts.append(f"in {location.name.lower()}")
-                description = phase.data.description.lower()
+                # Lowercase first letter of description for consistency
+                description = phase.data.description
+                if description:
+                    description = description[0].lower() + description[1:] if len(description) > 0 else description
                 if parts:
-                    parts.append(f"({description})")
+                    parts.append(f"- {description}")
                 else:
-                    parts.append(f"{description}")
+                    parts.append(description)
                 extra_info = "\nInvalid component: " + " ".join(parts)
         raise AcceptedNegativeData(
             operation=case.operation.label,
@@ -287,8 +296,7 @@ def missing_required_header(ctx: CheckContext, response: Response, case: Case) -
     if (
         data.parameter
         and data.parameter_location == ParameterLocation.HEADER
-        and data.description
-        and data.description.startswith("Missing ")
+        and data.scenario == CoverageScenario.MISSING_PARAMETER
     ):
         if data.parameter.lower() == "authorization":
             expected_statuses = {401}
@@ -313,7 +321,7 @@ def unsupported_method(ctx: CheckContext, response: Response, case: Case) -> boo
     if meta is None or not isinstance(meta.phase.data, CoveragePhaseData) or response.request.method == "OPTIONS":
         return None
     data = meta.phase.data
-    if data.description and data.description.startswith("Unspecified HTTP method:"):
+    if data.scenario == CoverageScenario.UNSPECIFIED_HTTP_METHOD:
         if response.status_code != 405:
             raise UnsupportedMethodResponse(
                 operation=case.operation.label,
@@ -340,7 +348,6 @@ def has_only_additional_properties_in_non_body_parameters(case: Case) -> bool:
     # Check if the case contains only additional properties in query, headers, or cookies.
     # This function is used to determine if negation is solely in the form of extra properties,
     # which are often ignored for backward-compatibility by the tested apps
-    from ._hypothesis import get_schema_for_location
     from .schemas import BaseOpenAPISchema
 
     meta = case.meta
@@ -358,7 +365,7 @@ def has_only_additional_properties_in_non_body_parameters(case: Case) -> bool:
         value = getattr(case, location.container_name)
         if value is not None and meta_for_location is not None and meta_for_location.mode.is_negative:
             container = getattr(case.operation, location.container_name)
-            schema = get_schema_for_location(location, container)
+            schema = container.schema
 
             if _has_serialization_sensitive_types(schema, container):
                 # Can't reliably determine if only additional properties were added

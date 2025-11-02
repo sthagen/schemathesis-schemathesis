@@ -9,6 +9,7 @@ from jsonschema import Draft4Validator
 import schemathesis
 from schemathesis.config import GenerationConfig
 from schemathesis.core.parameters import ParameterLocation
+from schemathesis.openapi.generation import filters
 from schemathesis.openapi.generation.filters import is_valid_header
 from schemathesis.specs.openapi import _hypothesis, formats
 from schemathesis.specs.openapi._hypothesis import make_positive_strategy
@@ -135,15 +136,14 @@ def test_inlined_definitions(deeply_nested_schema):
     test()
 
 
-@pytest.mark.parametrize("keywords", [{}, {"pattern": r"\A[A-F0-9]{12}\Z"}])
 @pytest.mark.hypothesis_nested
-def test_valid_headers(keywords):
+def test_valid_headers():
     # When headers are generated
     # And there is no other keywords than "type"
     strategy = make_positive_strategy(
         {
             "type": "object",
-            "properties": {"X-Foo": {"type": "string", **keywords}},
+            "properties": {"X-Foo": {"type": "string", "pattern": r"\A[A-F0-9]{12}\Z"}},
             "required": ["X-Foo"],
             "additionalProperties": False,
         },
@@ -166,7 +166,13 @@ def test_configure_headers():
     strategy = make_positive_strategy(
         {
             "type": "object",
-            "properties": {"X-Foo": {"type": "string"}},
+            "properties": {
+                "X-Foo": {
+                    "type": "string",
+                    # This is added a few layers above
+                    "format": formats.HEADER_FORMAT,
+                }
+            },
             "required": ["X-Foo"],
             "additionalProperties": False,
         },
@@ -320,7 +326,7 @@ def make_header_param(schema, **kwargs):
 
 def test_header_filtration_not_needed(ctx, mocker):
     # When schema contains a simple header
-    mocked = mocker.spy(_hypothesis, "is_valid_header")
+    mocked = mocker.spy(filters, "is_valid_header")
     schema = ctx.openapi.build_schema({})
     make_header_param(schema)
 
@@ -338,7 +344,7 @@ def test_header_filtration_not_needed(ctx, mocker):
 
 def test_header_filtration_needed(ctx, mocker):
     # When schema contains a header with a custom format
-    mocked = mocker.spy(_hypothesis, "is_valid_header")
+    mocked = mocker.spy(filters, "is_valid_header")
     schema = ctx.openapi.build_schema({})
     make_header_param(schema, format="date")
 
@@ -357,7 +363,7 @@ def test_header_filtration_needed(ctx, mocker):
 
 def test_missing_header_filter(ctx, mocker):
     # Regression. See GH-1142
-    mocked = mocker.spy(_hypothesis, "is_valid_header")
+    mocked = mocker.spy(filters, "is_valid_header")
     # When some header parameters have the `format` keyword
     # And some don't
     schema = ctx.openapi.build_schema(

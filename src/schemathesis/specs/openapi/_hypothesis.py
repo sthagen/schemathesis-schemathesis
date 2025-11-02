@@ -17,7 +17,6 @@ from schemathesis.core.control import SkipTest
 from schemathesis.core.errors import SERIALIZERS_SUGGESTION_MESSAGE, SerializationNotPossible
 from schemathesis.core.jsonschema.types import JsonSchema
 from schemathesis.core.parameters import ParameterLocation
-from schemathesis.core.transforms import deepclone
 from schemathesis.core.transport import prepare_urlencoded
 from schemathesis.generation.meta import (
     CaseMetadata,
@@ -29,9 +28,10 @@ from schemathesis.generation.meta import (
     StatefulPhaseData,
     TestPhase,
 )
-from schemathesis.openapi.generation.filters import is_valid_header, is_valid_path, is_valid_query, is_valid_urlencoded
+from schemathesis.openapi.generation.filters import is_valid_urlencoded
 from schemathesis.schemas import APIOperation
 from schemathesis.specs.openapi.adapter.parameters import OpenApiBody, OpenApiParameterSet
+from schemathesis.specs.openapi.negative.mutations import MutationMetadata
 
 from ... import auths
 from ...generation import GenerationMode
@@ -44,7 +44,7 @@ from .formats import (
     header_values,
 )
 from .media_types import MEDIA_TYPES
-from .negative import negative_schema
+from .negative import GeneratedValue, negative_schema
 from .negative.utils import can_negate
 
 SLASH = "/"
@@ -83,7 +83,6 @@ def openapi_cases(
     as it works with `body`.
     """
     start = time.monotonic()
-    strategy_factory = GENERATOR_MODE_TO_STRATEGY_FACTORY[generation_mode]
 
     generation_config = operation.schema.config.generation_for(operation=operation, phase=phase.value)
 
@@ -111,12 +110,11 @@ def openapi_cases(
                 # Not possible to negate body, fallback to positive data generation
                 if not candidates:
                     candidates = operation.body.items
-                    strategy_factory = make_positive_strategy
                     body_generator = GenerationMode.POSITIVE
             else:
                 candidates = operation.body.items
             parameter = draw(st.sampled_from(candidates))
-            strategy = _get_body_strategy(parameter, strategy_factory, operation, generation_config, draw)
+            strategy = _get_body_strategy(parameter, operation, generation_config, draw, body_generator)
             strategy = apply_hooks(operation, ctx, hooks, strategy, ParameterLocation.BODY)
             # Parameter may have a wildcard media type. In this case, choose any supported one
             possible_media_types = sorted(
@@ -140,17 +138,31 @@ def openapi_cases(
                 "application",
                 "x-www-form-urlencoded",
             ):
-                strategy = strategy.map(prepare_urlencoded).filter(is_valid_urlencoded)
-            body_ = ValueContainer(value=draw(strategy), location="body", generator=body_generator)
+                if body_generator.is_negative:
+                    # For negative strategies, unwrap GeneratedValue, apply transformation, then rewrap
+                    strategy = strategy.map(
+                        lambda x: GeneratedValue(prepare_urlencoded(x.value), x.meta)
+                        if isinstance(x, GeneratedValue)
+                        else prepare_urlencoded(x)
+                    ).filter(lambda x: is_valid_urlencoded(x.value if isinstance(x, GeneratedValue) else x))
+                else:
+                    strategy = strategy.map(prepare_urlencoded).filter(is_valid_urlencoded)
+            body_result = draw(strategy)
+            body_metadata = None
+            # Negative strategy returns GeneratedValue, positive returns just value
+            if isinstance(body_result, GeneratedValue):
+                body_metadata = body_result.meta
+                body_result = body_result.value
+            body_ = ValueContainer(value=body_result, location="body", generator=body_generator, meta=body_metadata)
         else:
-            body_ = ValueContainer(value=body, location="body", generator=None)
+            body_ = ValueContainer(value=body, location="body", generator=None, meta=None)
     else:
         # This explicit body payload comes for a media type that has a custom strategy registered
         # Such strategies only support binary payloads, otherwise they can't be serialized
         if not isinstance(body, bytes) and media_type in MEDIA_TYPES:
             all_media_types = operation.get_request_payload_content_types()
             raise SerializationNotPossible.from_media_types(*all_media_types)
-        body_ = ValueContainer(value=body, location="body", generator=None)
+        body_ = ValueContainer(value=body, location="body", generator=None, meta=None)
 
     # If we need to generate negative cases but no generated values were negated, then skip the whole test
     if generation_mode.is_negative and not any_negated_values([query_, cookies_, headers_, path_parameters_, body_]):
@@ -159,12 +171,89 @@ def openapi_cases(
         else:
             reject()
 
-    _phase_data = {
-        TestPhase.EXAMPLES: ExamplesPhaseData(),
-        TestPhase.FUZZING: FuzzingPhaseData(),
-        TestPhase.STATEFUL: StatefulPhaseData(),
-    }[phase]
-    phase_data = cast(Union[ExamplesPhaseData, FuzzingPhaseData, StatefulPhaseData], _phase_data)
+    # Extract mutation metadata from negated values and create phase-appropriate data
+    if generation_mode.is_negative:
+        negated_container = None
+        for container in [query_, cookies_, headers_, path_parameters_, body_]:
+            if container.generator == GenerationMode.NEGATIVE and container.meta is not None:
+                negated_container = container
+                break
+
+        if negated_container and negated_container.meta:
+            metadata = negated_container.meta
+            location_map = {
+                "query": ParameterLocation.QUERY,
+                "path_parameters": ParameterLocation.PATH,
+                "headers": ParameterLocation.HEADER,
+                "cookies": ParameterLocation.COOKIE,
+                "body": ParameterLocation.BODY,
+            }
+            parameter_location = location_map.get(negated_container.location)
+            _phase_data = {
+                TestPhase.EXAMPLES: ExamplesPhaseData(
+                    description=metadata.description,
+                    parameter=metadata.parameter,
+                    parameter_location=parameter_location,
+                    location=metadata.location,
+                ),
+                TestPhase.FUZZING: FuzzingPhaseData(
+                    description=metadata.description,
+                    parameter=metadata.parameter,
+                    parameter_location=parameter_location,
+                    location=metadata.location,
+                ),
+                TestPhase.STATEFUL: StatefulPhaseData(
+                    description=metadata.description,
+                    parameter=metadata.parameter,
+                    parameter_location=parameter_location,
+                    location=metadata.location,
+                ),
+            }[phase]
+            phase_data = cast(Union[ExamplesPhaseData, FuzzingPhaseData, StatefulPhaseData], _phase_data)
+        else:
+            _phase_data = {
+                TestPhase.EXAMPLES: ExamplesPhaseData(
+                    description="Schema mutated",
+                    parameter=None,
+                    parameter_location=None,
+                    location=None,
+                ),
+                TestPhase.FUZZING: FuzzingPhaseData(
+                    description="Schema mutated",
+                    parameter=None,
+                    parameter_location=None,
+                    location=None,
+                ),
+                TestPhase.STATEFUL: StatefulPhaseData(
+                    description="Schema mutated",
+                    parameter=None,
+                    parameter_location=None,
+                    location=None,
+                ),
+            }[phase]
+            phase_data = cast(Union[ExamplesPhaseData, FuzzingPhaseData, StatefulPhaseData], _phase_data)
+    else:
+        _phase_data = {
+            TestPhase.EXAMPLES: ExamplesPhaseData(
+                description="Positive test case",
+                parameter=None,
+                parameter_location=None,
+                location=None,
+            ),
+            TestPhase.FUZZING: FuzzingPhaseData(
+                description="Positive test case",
+                parameter=None,
+                parameter_location=None,
+                location=None,
+            ),
+            TestPhase.STATEFUL: StatefulPhaseData(
+                description="Positive test case",
+                parameter=None,
+                parameter_location=None,
+                location=None,
+            ),
+        }[phase]
+        phase_data = cast(Union[ExamplesPhaseData, FuzzingPhaseData, StatefulPhaseData], _phase_data)
 
     instance = operation.Case(
         media_type=media_type,
@@ -205,25 +294,17 @@ OPTIONAL_BODY_RATE = 0.05
 
 def _get_body_strategy(
     parameter: OpenApiBody,
-    strategy_factory: StrategyFactory,
     operation: APIOperation,
     generation_config: GenerationConfig,
     draw: st.DrawFn,
+    generation_mode: GenerationMode,
 ) -> st.SearchStrategy:
-    from schemathesis.specs.openapi.schemas import BaseOpenAPISchema
-
     if parameter.media_type in MEDIA_TYPES:
         return MEDIA_TYPES[parameter.media_type]
-    schema = parameter.optimized_schema
-    assert isinstance(operation.schema, BaseOpenAPISchema)
-    strategy = strategy_factory(
-        schema,
-        operation.label,
-        ParameterLocation.BODY,
-        parameter.media_type,
-        generation_config,
-        operation.schema.adapter.jsonschema_validator_cls,
-    )
+
+    # Use the cached strategy from the parameter
+    strategy = parameter.get_strategy(operation, generation_config, generation_mode)
+
     # It is likely will be rejected, hence choose it rarely
     if (
         not parameter.is_required
@@ -241,26 +322,34 @@ def get_parameters_value(
     operation: APIOperation,
     ctx: HookContext,
     hooks: HookDispatcher | None,
-    strategy_factory: StrategyFactory,
+    generation_mode: GenerationMode,
     generation_config: GenerationConfig,
-) -> dict[str, Any] | None:
+) -> tuple[dict[str, Any] | None, Any]:
     """Get the final value for the specified location.
 
     If the value is not set, then generate it from the relevant strategy. Otherwise, check what is missing in it and
     generate those parts.
     """
     if value is None:
-        strategy = get_parameters_strategy(operation, strategy_factory, location, generation_config)
+        strategy = get_parameters_strategy(operation, generation_mode, location, generation_config)
         strategy = apply_hooks(operation, ctx, hooks, strategy, location)
-        return draw(strategy)
-    strategy = get_parameters_strategy(operation, strategy_factory, location, generation_config, exclude=value.keys())
+        result = draw(strategy)
+        # Negative strategy returns GeneratedValue, positive returns just value
+        if isinstance(result, GeneratedValue):
+            return result.value, result.meta
+        return result, None
+    strategy = get_parameters_strategy(operation, generation_mode, location, generation_config, exclude=value.keys())
     strategy = apply_hooks(operation, ctx, hooks, strategy, location)
     new = draw(strategy)
+    metadata = None
+    # Negative strategy returns GeneratedValue, positive returns just value
+    if isinstance(new, GeneratedValue):
+        new, metadata = new.value, new.meta
     if new is not None:
         copied = dict(value)
         copied.update(new)
-        return copied
-    return value
+        return copied, metadata
+    return value, metadata
 
 
 @dataclass
@@ -270,8 +359,9 @@ class ValueContainer:
     value: Any
     location: str
     generator: GenerationMode | None
+    meta: MutationMetadata | None
 
-    __slots__ = ("value", "location", "generator")
+    __slots__ = ("value", "location", "generator", "meta")
 
     @property
     def is_generated(self) -> bool:
@@ -304,11 +394,10 @@ def generate_parameter(
     ):
         # If we can't negate any parameter, generate positive ones
         # If nothing else will be negated, then skip the test completely
-        strategy_factory = make_positive_strategy
         generator = GenerationMode.POSITIVE
-    else:
-        strategy_factory = GENERATOR_MODE_TO_STRATEGY_FACTORY[generator]
-    value = get_parameters_value(explicit, location, draw, operation, ctx, hooks, strategy_factory, generation_config)
+    value, metadata = get_parameters_value(
+        explicit, location, draw, operation, ctx, hooks, generator, generation_config
+    )
     used_generator: GenerationMode | None = generator
     if value == explicit:
         # When we pass `explicit`, then its parts are excluded from generation of the final value
@@ -316,7 +405,7 @@ def generate_parameter(
         if value is not None and location == ParameterLocation.PATH:
             value = quote_all(value)
         used_generator = None
-    return ValueContainer(value=value, location=location, generator=used_generator)
+    return ValueContainer(value=value, location=location, generator=used_generator, meta=metadata)
 
 
 def can_negate_path_parameters(operation: APIOperation) -> bool:
@@ -335,86 +424,22 @@ def can_negate_headers(operation: APIOperation, location: ParameterLocation) -> 
     headers = container.schema["properties"]
     if not headers:
         return True
-    return any(header != {"type": "string"} for header in headers.values())
-
-
-def get_schema_for_location(location: ParameterLocation, parameters: OpenApiParameterSet) -> dict[str, Any]:
-    schema = deepclone(parameters.schema)
-    if location == ParameterLocation.PATH:
-        schema["required"] = list(schema["properties"])
-        # Shallow copy properties dict itself and each modified property
-        properties = schema.get("properties", {})
-        if properties:
-            schema["properties"] = {
-                key: {**value, "minLength": value.get("minLength", 1)}
-                if value.get("type") == "string" and "minLength" not in value
-                else value
-                for key, value in properties.items()
-            }
-    return schema
+    return any(
+        header not in ({"type": "string"}, {"type": "string", "format": HEADER_FORMAT}) for header in headers.values()
+    )
 
 
 def get_parameters_strategy(
     operation: APIOperation,
-    strategy_factory: StrategyFactory,
+    generation_mode: GenerationMode,
     location: ParameterLocation,
     generation_config: GenerationConfig,
     exclude: Iterable[str] = (),
 ) -> st.SearchStrategy:
     """Create a new strategy for the case's component from the API operation parameters."""
-    from schemathesis.specs.openapi.schemas import BaseOpenAPISchema
-
     container = getattr(operation, location.container_name)
     if container:
-        schema = get_schema_for_location(location, container)
-        if location == ParameterLocation.HEADER and exclude:
-            # Remove excluded headers case-insensitively
-            exclude_lower = {name.lower() for name in exclude}
-            schema["properties"] = {
-                key: value for key, value in schema["properties"].items() if key.lower() not in exclude_lower
-            }
-            if "required" in schema:
-                schema["required"] = [key for key in schema["required"] if key.lower() not in exclude_lower]
-        elif exclude:
-            # Non-header locations: remove by exact name
-            schema = dict(schema)
-            schema["properties"] = {key: value for key, value in schema["properties"].items() if key not in exclude}
-            if "required" in schema:
-                schema["required"] = [key for key in schema["required"] if key not in exclude]
-        if not schema["properties"] and strategy_factory is make_negative_strategy:
-            # Nothing to negate - all properties were excluded
-            strategy = st.none()
-        else:
-            assert isinstance(operation.schema, BaseOpenAPISchema)
-            strategy = strategy_factory(
-                schema,
-                operation.label,
-                location,
-                None,
-                generation_config,
-                operation.schema.adapter.jsonschema_validator_cls,
-            )
-            serialize = operation.get_parameter_serializer(location)
-            if serialize is not None:
-                strategy = strategy.map(serialize)
-            filter_func = {
-                ParameterLocation.PATH: is_valid_path,
-                ParameterLocation.HEADER: is_valid_header,
-                ParameterLocation.COOKIE: is_valid_header,
-                ParameterLocation.QUERY: is_valid_query,
-            }[location]
-            # Headers with special format do not need filtration
-            if not (location.is_in_header and _can_skip_header_filter(schema)):
-                strategy = strategy.filter(filter_func)
-            # Path & query parameters will be cast to string anyway, but having their JSON equivalents for
-            # `True` / `False` / `None` improves chances of them passing validation in apps
-            # that expect boolean / null types
-            # and not aware of Python-specific representation of those types
-            if location == ParameterLocation.PATH:
-                strategy = strategy.map(quote_all).map(jsonify_python_specific_types)
-            elif location == ParameterLocation.QUERY:
-                strategy = strategy.map(jsonify_python_specific_types)
-        return strategy
+        return container.get_strategy(operation, generation_config, generation_mode, exclude)
     # No parameters defined for this location
     return st.none()
 
@@ -464,13 +489,6 @@ def make_positive_strategy(
     validator_cls: type[jsonschema.protocols.Validator],
 ) -> st.SearchStrategy:
     """Strategy for generating values that fit the schema."""
-    if location.is_in_header and isinstance(schema, dict):
-        # We try to enforce the right header values via "format"
-        # This way, only allowed values will be used during data generation, which reduces the amount of filtering later
-        # If a property schema contains `pattern` it leads to heavy filtering and worse performance - therefore, skip it
-        for sub_schema in schema.get("properties", {}).values():
-            if list(sub_schema) == ["type"] and sub_schema["type"] == "string":
-                sub_schema.setdefault("format", HEADER_FORMAT)
     custom_formats = _build_custom_formats(generation_config)
     return from_schema(
         schema,

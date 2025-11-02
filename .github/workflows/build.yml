@@ -35,13 +35,13 @@ jobs:
 
       - uses: astral-sh/setup-uv@v7
 
-      - run: uvx pre-commit run --all-files
+      - run: uvx prek run --all-files
 
   tests:
     strategy:
       matrix:
         os: [ubuntu-22.04, windows-2022]
-        python: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        python: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
       fail-fast: false
 
     name: Tests (Python ${{ matrix.python }} on ${{ matrix.os }} ${{ matrix.tox_env }})

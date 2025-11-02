@@ -11,8 +11,11 @@ from schemathesis.generation import GenerationMode
 from schemathesis.generation.meta import (
     CaseMetadata,
     ComponentInfo,
+    CoverageScenario,
+    FuzzingPhaseData,
     GenerationInfo,
     PhaseInfo,
+    TestPhase,
 )
 from schemathesis.specs.openapi.checks import (
     ResourcePath,
@@ -102,7 +105,15 @@ def build_metadata(
             ]
             if value is not None
         },
-        phase=PhaseInfo.fuzzing(),
+        phase=PhaseInfo(
+            name=TestPhase.FUZZING,
+            data=FuzzingPhaseData(
+                description="",
+                parameter=None,
+                parameter_location=None,
+                location=None,
+            ),
+        ),
     )
 
 
@@ -234,6 +245,7 @@ def test_response_schema_conformance_with_unspecified_method(response_factory, s
                 ParameterLocation.QUERY: ComponentInfo(mode=GenerationMode.NEGATIVE),
             },
             phase=PhaseInfo.coverage(
+                CoverageScenario.UNSPECIFIED_HTTP_METHOD,
                 description="Unspecified HTTP method: PUT",
             ),
         ),

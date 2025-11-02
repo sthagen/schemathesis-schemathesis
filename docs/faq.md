@@ -84,17 +84,33 @@ Compared to tools like Dredd, Schemathesis focuses more on finding unexpected ed
 
 Schemathesis has the following limitations:
 
-### Schema Processing Limitations
-
-- **Recursive References:**  
-  Schemathesis handles most recursive schemas by cutting recursion at a defined depth. However, in a very small fraction of cases (approximately 25 out of over 100,000 schemas tested), complex recursive patterns involving multiple reference hops may cause errors. For more details, see [GitHub issue #947](https://github.com/schemathesis/schemathesis/issues/947).
-
 ### GraphQL Limitations
 
 - **Negative Testing:**  
   Schemathesis does not support generating invalid inputs for GraphQL endpoints. The `--mode negative` and `--mode all` options are applicable only to OpenAPI schemas.
 
 If you encounter issues not listed here, please report them on our [GitHub issues page](https://github.com/schemathesis/schemathesis/issues).
+
+## Why is Schemathesis skipping my Authorization header?
+
+Schemathesis **intentionally** removes or modifies authentication in some test cases. This is security testing, not a bug.
+
+**Why this happens:**
+
+Schemathesis verifies that your API properly validates authentication by testing with:
+- No authentication credentials
+- Incorrect authentication credentials
+
+This helps catch authentication bypass vulnerabilities where APIs accept requests they should reject.
+
+**When you'll see this:**
+
+- The `ignored_auth` check makes additional requests without auth or with invalid credentials
+- Some test cases in the coverage phase may omit required headers including Authorization
+- You'll see failures if your API accepts requests it should reject
+
+!!! important ""
+    The majority of test cases still use your provided authentication normally. Only specific security-focused tests intentionally modify it.
 
 ## Can I use Schemathesis with Allure?
 

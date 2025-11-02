@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 from schemathesis.generation.modes import GenerationMode
@@ -604,3 +606,239 @@ async def test_fail(case):
     )
     result = testdir.runpytest()
     result.assert_outcomes(passed=2, failed=2)
+
+
+def test_phases_from_config(testdir):
+    # When test phases are configured in schemathesis.toml
+    testdir.makefile(
+        ".toml",
+        schemathesis="""
+[phases.examples]
+enabled = false
+
+[phases.coverage]
+enabled = false
+""",
+    )
+
+    # Then phases should be applied when using from_fixture
+    testdir.make_test(
+        """
+import pytest
+import schemathesis
+
+@pytest.fixture
+def api_schema():
+    return schemathesis.openapi.from_dict({
+        "openapi": "3.0.0",
+        "paths": {
+            "/users": {
+                "get": {
+                    "responses": {"200": {"description": "OK"}}
+                }
+            }
+        }
+    })
+
+lazy_schema = schemathesis.pytest.from_fixture("api_schema")
+
+@lazy_schema.parametrize()
+def test_api(case):
+    assert case.meta.phase.name == "fuzzing"
+"""
+    )
+    result = testdir.runpytest()
+    result.assert_outcomes(passed=1)
+
+
+def test_hypothesis_settings_from_config(testdir):
+    # When hypothesis settings are configured in schemathesis.toml for a specific operation
+    testdir.makefile(
+        ".toml",
+        schemathesis="""
+[[operations]]
+include-path = "/users"
+
+[operations.generation]
+max-examples = 5
+
+[phases.examples]
+enabled = false
+
+[phases.coverage]
+enabled = false
+""",
+    )
+
+    # Then operation-specific hypothesis settings should be applied when using from_fixture
+    testdir.make_test(
+        """
+import pytest
+import schemathesis
+
+@pytest.fixture
+def api_schema():
+    return schemathesis.openapi.from_dict({
+        "openapi": "3.0.0",
+        "paths": {
+            "/users": {
+                "get": {
+                    "parameters": [
+                        {"name": "id", "in": "query", "schema": {"type": "integer"}}
+                    ],
+                    "responses": {"200": {"description": "OK"}}
+                }
+            }
+        }
+    })
+
+lazy_schema = schemathesis.pytest.from_fixture("api_schema")
+
+call_count = 0
+
+@lazy_schema.parametrize()
+def test_api(case):
+    global call_count
+    call_count += 1
+    print(f"Call count: {call_count}")
+"""
+    )
+    result = testdir.runpytest("-s")
+    result.assert_outcomes(passed=1)
+    counts = re.findall(r"Call count: (\d+)", result.stdout.str())
+    max_count = int(counts[-1])
+    assert max_count <= 10, f"Expected max_examples=5 to limit calls to ~5, but got {max_count}"
+
+
+def test_lazy_fixture_with_test_class(testdir):
+    # When using from_fixture with a test method inside a class
+    testdir.make_test(
+        """
+import pytest
+import schemathesis
+
+@pytest.fixture
+def api_schema():
+    return schemathesis.openapi.from_dict({
+        "openapi": "3.0.0",
+        "paths": {
+            "/users": {
+                "get": {
+                    "responses": {"200": {"description": "OK"}}
+                }
+            }
+        }
+    })
+
+lazy_schema = schemathesis.pytest.from_fixture("api_schema")
+
+class TestAPI:
+    @lazy_schema.parametrize()
+    def test_users(self, case):
+        assert case.operation.path == "/users"
+"""
+    )
+    # Then it should work without crashes
+    result = testdir.runpytest("-v")
+    result.assert_outcomes(passed=1)
+
+
+def test_checks_available_with_from_fixture(tmp_path):
+    # When using from_fixture, checks should be accessible without AttributeError
+    # Run in subprocess to avoid test pre-loading modules
+    import subprocess
+    import sys
+
+    test_file = tmp_path / "test_isolated.py"
+    test_file.write_text("""
+import pytest
+import schemathesis
+from hypothesis import settings, Phase
+
+@pytest.fixture
+def api_schema():
+    return schemathesis.openapi.from_dict({
+        "openapi": "3.0.0",
+        "paths": {
+            "/users": {
+                "get": {
+                    "responses": {"200": {"description": "OK"}}
+                }
+            }
+        }
+    })
+
+lazy_schema = schemathesis.pytest.from_fixture("api_schema")
+
+@lazy_schema.parametrize()
+@settings(max_examples=1, phases=[Phase.generate])
+def test_checks_are_loaded(case):
+    _ = schemathesis.checks.status_code_conformance
+""")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", str(test_file), "-v", "-p", "no:cacheprovider"],
+        capture_output=True,
+        text=True,
+        cwd=str(tmp_path),
+    )
+
+    assert result.returncode == 0, f"Test failed:\n{result.stdout}\n{result.stderr}"
+
+
+def test_operations_disabled_via_config_with_from_fixture(testdir):
+    # Given a schemathesis.toml that disables a specific operation
+    testdir.makefile(
+        ".toml",
+        schemathesis="""
+[[operations]]
+include-name = "POST /users"
+enabled = false
+""",
+    )
+
+    # And a schema with multiple operations
+    testdir.make_test(
+        """
+import pytest
+import schemathesis
+
+@pytest.fixture
+def api_schema():
+    return schemathesis.openapi.from_dict({
+        "openapi": "3.0.0",
+        "info": {"title": "Test API", "version": "1.0.0"},
+        "paths": {
+            "/users": {
+                "get": {
+                    "responses": {"200": {"description": "OK"}}
+                },
+                "post": {
+                    "responses": {"200": {"description": "OK"}}
+                }
+            },
+            "/products": {
+                "get": {
+                    "responses": {"200": {"description": "OK"}}
+                }
+            }
+        }
+    })
+
+lazy_schema = schemathesis.pytest.from_fixture("api_schema")
+
+@lazy_schema.parametrize()
+def test_api(case):
+    pass
+"""
+    )
+
+    result = testdir.runpytest("-v")
+
+    # Then `POST /users` should be excluded, only `GET /users` and `GET /products` should be tested
+    # With pytest-subtests, the main test passes once, with 2 subtests (not 3)
+    result.assert_outcomes(passed=1)
+
+    assert "POST /users" not in result.stdout.str()
+    assert "GET /users" in result.stdout.str()
+    assert "GET /products" in result.stdout.str()
