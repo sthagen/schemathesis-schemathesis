@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "schemathesis"
-version = "4.3.17"
+version = "4.3.18"
 description = "Property-based testing framework for Open API and GraphQL based apps"
 keywords = ["pytest", "hypothesis", "openapi", "graphql", "testing"]
 authors = [{ name = "Dmitry Dygalo", email = "dmitry@dygalo.dev" }]
@@ -130,6 +130,7 @@ select = [
   "T201",  # flake8-print
   "I",     # isort
   "FURB",  # refurb
+  "PGH003", # blanket-type-ignore
 ]
 ignore = [
   "E501", # Line too long
