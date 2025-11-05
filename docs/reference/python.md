@@ -129,7 +129,41 @@ Reference for Schemathesis public Python API.
       show_labels: true
       members:
       - SerializationContext
-      - serializer
+
+### serializer
+
+::: schemathesis.transport.SerializerRegistry.__call__
+    options:
+      heading_level: 4
+      show_root_heading: false
+      show_root_toc_entry: false
+      show_symbol_type_heading: false
+      signature_crossrefs: true
+      show_labels: true
+
+### serializer.alias
+
+::: schemathesis.transport.SerializerRegistry.alias
+    options:
+      heading_level: 4
+      show_root_heading: false
+      show_root_toc_entry: false
+      show_symbol_type_heading: false
+      signature_crossrefs: true
+      show_labels: true
+
+## Response Deserialization
+
+::: schemathesis
+    options:
+      heading_level: 3
+      show_root_toc_entry: false
+      show_symbol_type_heading: true
+      signature_crossrefs: true
+      show_labels: true
+      members:
+      - DeserializationContext
+      - deserializer
 
 ## Targeted Property-based Testing
 

@@ -21,6 +21,7 @@ import pytest
 import requests
 import tomli_w
 import yaml
+from _pytest.main import ExitCode
 from click.testing import CliRunner, Result
 from hypothesis import settings
 from syrupy.extensions.single_file import SingleFileSnapshotExtension, WriteMode
@@ -33,10 +34,14 @@ import schemathesis.cli
 from schemathesis import auths, hooks
 from schemathesis.cli.commands.run.executor import CUSTOM_HANDLERS
 from schemathesis.cli.commands.run.handlers import output
+from schemathesis.core import deserialization
 from schemathesis.core.hooks import HOOKS_MODULE_ENV_VAR
 from schemathesis.core.transport import Response
 from schemathesis.core.version import SCHEMATHESIS_VERSION
 from schemathesis.specs.openapi import media_types
+from schemathesis.transport.asgi import ASGI_TRANSPORT
+from schemathesis.transport.requests import REQUESTS_TRANSPORT
+from schemathesis.transport.wsgi import WSGI_TRANSPORT
 
 from .apps import _graphql as graphql
 from .apps import openapi
@@ -66,15 +71,27 @@ output.SCHEMATHESIS_VERSION = "dev"
 
 @pytest.fixture(autouse=True)
 def reset_hooks():
+    # Store built-in deserializers to restore after test
+    builtin_deserializers = deserialization.deserializers().copy()
+
     CUSTOM_HANDLERS.clear()
     hooks.unregister_all()
     auths.unregister()
+    for transport in (ASGI_TRANSPORT, WSGI_TRANSPORT, REQUESTS_TRANSPORT):
+        transport.unregister_serializer(*media_types.MEDIA_TYPES.keys())
     media_types.unregister_all()
     yield
     CUSTOM_HANDLERS.clear()
     hooks.unregister_all()
     auths.unregister()
+    for transport in (ASGI_TRANSPORT, WSGI_TRANSPORT, REQUESTS_TRANSPORT):
+        transport.unregister_serializer(*media_types.MEDIA_TYPES.keys())
     media_types.unregister_all()
+    # Restore built-in deserializers
+    current = list(deserialization.deserializers().keys())
+    deserialization.unregister_deserializer(*current)
+    for media_type, func in builtin_deserializers.items():
+        deserialization.register_deserializer(func, media_type)
 
 
 @pytest.fixture(scope="session")
@@ -612,6 +629,12 @@ def cli(tmp_path):
             result = cli_runner.invoke(schemathesis.cli.schemathesis, args, **kwargs)
             if result.exception and not isinstance(result.exception, SystemExit):
                 raise result.exception
+            return result
+
+        @staticmethod
+        def run_and_assert(*args, exit_code: ExitCode = ExitCode.OK, **kwargs):
+            result = Runner.run(*args, **kwargs)
+            assert result.exit_code == exit_code, result.stdout
             return result
 
     return Runner()

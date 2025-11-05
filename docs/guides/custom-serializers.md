@@ -61,7 +61,7 @@ def csv_serializer(ctx, value):
     # Handle binary data from external examples
     if isinstance(value, bytes):
         return value
-    
+
     # Handle unexpected types in negative testing  
     if not isinstance(value, list) or \
       not all(isinstance(item, dict) for item in value):
@@ -76,7 +76,7 @@ def csv_serializer(ctx, value):
     writer = csv.DictWriter(output, field_names)
     writer.writeheader()
     writer.writerows(value)
-    
+
     return output.getvalue().encode('utf-8')  # Must return bytes or None
 ```
 
@@ -91,6 +91,28 @@ schemathesis run http://localhost:8000/openapi.json
     If your serializer returns `None`, the resulting request will have no body.
 
 ## Essential Patterns
+
+### Reusing Built-in Serializers
+
+Reuse existing serializers (YAML, JSON, XML) for custom media types:
+
+```python
+import schemathesis
+
+# Reuse built-in YAML serializer for non-standard YAML variants
+schemathesis.serializer.alias("application/x-yaml-custom", "application/yaml")
+
+# Reuse JSON for internal company formats
+schemathesis.serializer.alias("application/vnd.company.internal", "application/json")
+
+# Register multiple aliases at once
+schemathesis.serializer.alias(
+    ["text/x-json", "application/jsonrequest"],
+    "application/json"
+)
+```
+
+**Note:** Media types with `+json` or `+xml` suffixes (like `application/vnd.api+json`) are automatically handled and don't need aliases.
 
 ### Multiple aliases for the same format
 
