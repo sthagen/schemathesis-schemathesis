@@ -28,6 +28,18 @@ Schemathesis dev
 
      ✅ 2 passed
 
+=================================== WARNINGS ===================================
+
+Schema validation skipped: 2 operations cannot validate responses due to missing deserializers
+
+  - GET /data1
+    Cannot validate response 200: no deserializer registered for application/vnd.api+custom
+
+  - GET /data2
+    Cannot validate response 200: no deserializer registered for application/vnd.other+custom
+
+💡 Register a deserializer with @schemathesis.deserializer() to enable validation
+
 =================================== SUMMARY ====================================
 
 API Operations:
@@ -39,6 +51,9 @@ Test Phases:
   ✅ Coverage
   ✅ Fuzzing
   ⏭  Stateful (not applicable)
+
+Warnings:
+  ⚠️ Schema validation skipped: 2 operations cannot validate responses
 
 Test cases:
   N generated, N passed, N skipped

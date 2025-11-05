@@ -1,6 +1,12 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.3.18...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.4.0...HEAD) - TBD
+
+### :bug: Fixed
+
+- Extracting incomplete schema-level and property-level examples when parent schema with `allOf` has its own complete example. [#3268](https://github.com/schemathesis/schemathesis/issues/3268)
+
+## [4.4.0](https://github.com/schemathesis/schemathesis/compare/v4.3.18...v4.4.0) - 2025-11-05
 
 ### :rocket: Added
 
@@ -10,12 +16,14 @@
 - Response deserializer hook for non-JSON schema conformance checks (`schemathesis.deserializer`). [#2934](https://github.com/schemathesis/schemathesis/issues/2934)
 - Automatic dependency inference in Python stateful tests via `schema.as_state_machine()`.
 - `schemathesis.serializer.alias()` to reuse built-in serializers (YAML, JSON, XML) for custom media types without reimplementing them. [#2952](https://github.com/schemathesis/schemathesis/issues/2952)
+- Warning when API responses have structured schemas but no registered deserializer, helping catch silently skipped validation.
 
 ### :bug: Fixed
 
 - Curl commands with non-printable characters now use shell-aware escaping and display warnings for unknown shells. [#2159](https://github.com/schemathesis/schemathesis/issues/2159)
 - Internal error when the coverage phase generates data not serializable into media type registered via `schemathesis.openapi.media_type`.
 - Internal error when negative testing encounters schemas with bundled references.
+- Internal error when processing link definitions missing both `operationRef` and `operationId`.
 - CLI now starts displaying the current operation as soon as execution begins, preventing the blank progress window most noticeable during the coverage phase.
 
 ### :wrench: Changed
