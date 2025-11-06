@@ -1,10 +1,21 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.4.0...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.4.1...HEAD) - TBD
+
+## [4.4.1](https://github.com/schemathesis/schemathesis/compare/v4.4.0...v4.4.1) - 2025-11-06
 
 ### :bug: Fixed
 
 - Extracting incomplete schema-level and property-level examples when parent schema with `allOf` has its own complete example. [#3268](https://github.com/schemathesis/schemathesis/issues/3268)
+- Coverage phase generating different negative cases for `not` schemas in `--mode=all` vs `--mode=negative`.
+
+### :racing_car: Performance
+
+- Faster CLI startup by lazy-loading Hypothesis only when running tests, not during help display or schema validation.
+
+### :wrench: Changed
+
+- Colorized the help output for `schemathesis` and `schemathesis run` to improve readability in terminals.
 
 ## [4.4.0](https://github.com/schemathesis/schemathesis/compare/v4.3.18...v4.4.0) - 2025-11-05
 
