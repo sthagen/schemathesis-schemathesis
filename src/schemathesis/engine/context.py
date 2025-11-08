@@ -4,13 +4,12 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from schemathesis.config import InferenceAlgorithm, ProjectConfig
+from schemathesis.config import ProjectConfig
 from schemathesis.core import NOT_SET, NotSet
 from schemathesis.engine.control import ExecutionControl
 from schemathesis.engine.observations import Observations
 from schemathesis.generation.case import Case
 from schemathesis.schemas import APIOperation, BaseSchema
-from schemathesis.specs.openapi.stateful import dependencies
 
 if TYPE_CHECKING:
     import threading
@@ -86,28 +85,17 @@ class EngineContext:
 
     def inject_links(self) -> int:
         """Inject inferred OpenAPI links into API operations based on collected observations."""
-        from schemathesis.specs.openapi.schemas import BaseOpenAPISchema
+        from schemathesis.specs.openapi.schemas import OpenApiSchema
 
         injected = 0
         if self.observations is not None and self.observations.location_headers:
-            from schemathesis.specs.openapi.stateful.inference import LinkInferencer
-
-            assert isinstance(self.schema, BaseOpenAPISchema)
+            assert isinstance(self.schema, OpenApiSchema)
 
             # Generate links from collected Location headers
-            inferencer = LinkInferencer.from_schema(self.schema)
             for operation, entries in self.observations.location_headers.items():
-                injected += inferencer.inject_links(operation.responses, entries)
-        if (
-            isinstance(self.schema, BaseOpenAPISchema)
-            and self.schema.config.phases.stateful.enabled
-            and self.schema.config.phases.stateful.inference.is_algorithm_enabled(
-                InferenceAlgorithm.DEPENDENCY_ANALYSIS
-            )
-            and not self.schema._inference_applied
-        ):
-            injected += dependencies.inject_links(self.schema)
-            self.schema._inference_applied = True
+                injected += self.schema.analysis.inferencer.inject_links(operation.responses, entries)
+        if isinstance(self.schema, OpenApiSchema) and self.schema.analysis.should_inject_links():
+            injected += self.schema.analysis.inject_links()
         return injected
 
     def stop(self) -> None:

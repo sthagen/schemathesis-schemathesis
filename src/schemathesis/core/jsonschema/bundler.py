@@ -15,6 +15,9 @@ if TYPE_CHECKING:
 BUNDLE_STORAGE_KEY = "x-bundled"
 REFERENCE_TO_BUNDLE_PREFIX = f"#/{BUNDLE_STORAGE_KEY}"
 
+# Cache for bundled parameters: parameter object id -> (bundled definition, name_to_uri mapping)
+BundleCache = dict[int, tuple[dict[str, Any], dict[str, str]]]
+
 
 class BundleError(Exception):
     def __init__(self, reference: str, value: Any) -> None:
@@ -77,6 +80,9 @@ class Bundler:
             if isinstance(current, dict):
                 reference = current.get("$ref")
                 if isinstance(reference, str) and not reference.startswith(REFERENCE_TO_BUNDLE_PREFIX):
+                    # Empty references resolve to the current scope and are not useful for test generation
+                    if not reference.strip():
+                        return {key: _bundle_recursive(value) for key, value in current.items() if key != "$ref"}
                     resolved_uri, resolved_schema = resolve(reference)
 
                     if not isinstance(resolved_schema, (dict, bool)):

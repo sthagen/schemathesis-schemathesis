@@ -1,6 +1,40 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.4.1...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.4.3...HEAD) - TBD
+
+### :racing_car: Performance
+
+- 10-50% faster schema iteration through parameter bundling cache.
+
+### :wrench: Changed
+
+- Replace archived `backoff` with `tenacity`. [#3286](https://github.com/schemathesis/schemathesis/issues/3286)
+
+## [4.4.3](https://github.com/schemathesis/schemathesis/compare/v4.4.2...v4.4.3) - 2025-11-07
+
+### :bug: Fixed
+
+- Empty `$ref` references in schemas are now gracefully skipped during bundling.
+- Custom format strategies returning binary data. [#3289](https://github.com/schemathesis/schemathesis/issues/3289)
+- Duplicate exception reporting in pytest output.
+
+## [4.4.2](https://github.com/schemathesis/schemathesis/compare/v4.4.1...v4.4.2) - 2025-11-07
+
+### :rocket: Added
+
+- `schema.find_operation_by_path(method, path)` to match actual request paths to API operations.
+
+### :bug: Fixed
+
+- Respect multiple OpenAPI 3.x response content types by matching schemas to the actual `Content-Type` header instead of always validating against the first declared media type.
+- Handle OpenAPI 3.1 schemas that omit `paths` (e.g., webhook-only specs) by making path lookups resilient when `paths` is absent.
+- Response schema validation not working for schemas with nested `$ref` chains in response definitions.
+- Internal error when extracting examples from schemas with nested `allOf` structures.
+
+### :racing_car: Performance
+
+- ~5-30% performance improvements for iterating over API operations through base URL caching.
+- 10-100x faster link generation for stateful testing on large APIs.
 
 ## [4.4.1](https://github.com/schemathesis/schemathesis/compare/v4.4.0...v4.4.1) - 2025-11-06
 

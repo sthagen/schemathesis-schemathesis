@@ -34,10 +34,11 @@ from schemathesis.specs.openapi.stateful.dependencies.resources import remove_un
 
 if TYPE_CHECKING:
     from schemathesis.schemas import APIOperation
-    from schemathesis.specs.openapi.schemas import BaseOpenAPISchema
+    from schemathesis.specs.openapi.schemas import OpenApiSchema
 
 __all__ = [
     "analyze",
+    "inject_links",
     "DependencyGraph",
     "InputSlot",
     "OutputSlot",
@@ -47,7 +48,7 @@ __all__ = [
 ]
 
 
-def analyze(schema: BaseOpenAPISchema) -> DependencyGraph:
+def analyze(schema: OpenApiSchema) -> DependencyGraph:
     """Build a dependency graph by inferring resource producers and consumers from API operations."""
     operations: OperationMap = {}
     resources: ResourceMap = {}
@@ -103,11 +104,15 @@ def analyze(schema: BaseOpenAPISchema) -> DependencyGraph:
     return DependencyGraph(operations=operations, resources=resources)
 
 
-def inject_links(schema: BaseOpenAPISchema) -> int:
-    injected = 0
+def inject_links(schema: OpenApiSchema) -> int:
     graph = analyze(schema)
+    return _inject_links(schema, graph)
+
+
+def _inject_links(schema: OpenApiSchema, graph: DependencyGraph) -> int:
+    injected = 0
     for response_links in graph.iter_links():
-        operation = schema.get_operation_by_reference(response_links.producer_operation_ref)
+        operation = schema.find_operation_by_reference(response_links.producer_operation_ref)
         response = operation.responses.get(response_links.status_code)
         links = response.definition.setdefault(schema.adapter.links_keyword, {})
 
@@ -133,7 +138,7 @@ def inject_links(schema: BaseOpenAPISchema) -> int:
     return injected
 
 
-def _normalize_link(link: dict[str, Any], schema: BaseOpenAPISchema) -> NormalizedLink:
+def _normalize_link(link: dict[str, Any], schema: OpenApiSchema) -> NormalizedLink:
     """Normalize a link definition for comparison."""
     operation = _resolve_link_operation(link, schema)
 
@@ -166,12 +171,12 @@ def _normalize_parameter_keys(parameters: dict, operation: APIOperation) -> set[
     return normalized
 
 
-def _resolve_link_operation(link: dict, schema: BaseOpenAPISchema) -> APIOperation:
+def _resolve_link_operation(link: dict, schema: OpenApiSchema) -> APIOperation:
     """Resolve link to operation."""
     if "operationRef" in link:
-        return schema.get_operation_by_reference(link["operationRef"])
+        return schema.find_operation_by_reference(link["operationRef"])
     if "operationId" in link:
-        return schema.get_operation_by_id(link["operationId"])
+        return schema.find_operation_by_id(link["operationId"])
     raise InvalidSchema(
         "Link definition is missing both 'operationRef' and 'operationId'. "
         "At least one of these fields must be present to identify the target operation."

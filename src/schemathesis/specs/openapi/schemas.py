@@ -2,30 +2,18 @@ from __future__ import annotations
 
 import string
 from contextlib import contextmanager, suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from difflib import get_close_matches
 from functools import cached_property, lru_cache
 from json import JSONDecodeError
 from types import SimpleNamespace
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Callable,
-    Generator,
-    Iterator,
-    Mapping,
-    NoReturn,
-    Sequence,
-    cast,
-)
-from urllib.parse import urlsplit
+from typing import TYPE_CHECKING, Any, Callable, Generator, Iterator, Mapping, NoReturn, Sequence, cast
 
 import jsonschema
 from packaging import version
 from requests.structures import CaseInsensitiveDict
 
-from schemathesis.config import InferenceAlgorithm
-from schemathesis.core import INJECTED_PATH_PARAMETER_KEY, NOT_SET, NotSet, Specification, deserialization, media_types
+from schemathesis.core import INJECTED_PATH_PARAMETER_KEY, NOT_SET, NotSet, Specification, deserialization
 from schemathesis.core.adapter import OperationParameter, ResponsesContainer
 from schemathesis.core.compat import RefResolutionError
 from schemathesis.core.errors import (
@@ -36,6 +24,8 @@ from schemathesis.core.errors import (
     SchemaLocation,
 )
 from schemathesis.core.failures import Failure, FailureGroup, MalformedJson
+from schemathesis.core.jsonschema import Bundler
+from schemathesis.core.jsonschema.bundler import BundleCache
 from schemathesis.core.parameters import ParameterLocation
 from schemathesis.core.result import Err, Ok, Result
 from schemathesis.core.transport import Response
@@ -44,21 +34,15 @@ from schemathesis.generation.meta import CaseMetadata
 from schemathesis.openapi.checks import JsonSchemaError, MissingContentType
 from schemathesis.specs.openapi import adapter
 from schemathesis.specs.openapi.adapter import OpenApiResponses
-from schemathesis.specs.openapi.adapter.parameters import (
-    COMBINED_FORM_DATA_MARKER,
-    OpenApiParameter,
-    OpenApiParameterSet,
-)
+from schemathesis.specs.openapi.adapter.parameters import OpenApiParameter, OpenApiParameterSet
 from schemathesis.specs.openapi.adapter.protocol import SpecificationAdapter
 from schemathesis.specs.openapi.adapter.security import OpenApiSecurityParameters
-from schemathesis.specs.openapi.stateful import dependencies
+from schemathesis.specs.openapi.analysis import OpenAPIAnalysis
 
 from ...generation import GenerationMode
 from ...hooks import HookContext, HookDispatcher
 from ...schemas import APIOperation, APIOperationMap, ApiStatistic, BaseSchema, OperationDefinition
-from . import serialization
 from ._hypothesis import openapi_cases
-from .definitions import OPENAPI_30_VALIDATOR, OPENAPI_31_VALIDATOR, SWAGGER_20_VALIDATOR
 from .examples import get_strategies_from_examples
 from .references import ReferenceResolver
 from .stateful import create_state_machine
@@ -86,31 +70,68 @@ def get_template_fields(template: str) -> set[str]:
 
 
 @dataclass(eq=False, repr=False)
-class BaseOpenAPISchema(BaseSchema):
+class OpenApiSchema(BaseSchema):
     adapter: SpecificationAdapter = None  # type: ignore[assignment]
+    _spec_version: str = field(init=False)
 
     def __post_init__(self) -> None:
+        self._initialize_adapter()
         super().__post_init__()
-        # Track whether dependency inference has been applied to avoid duplicate work
-        self._inference_applied: bool = False
+        self.analysis = OpenAPIAnalysis(self)
+        self._bundler = Bundler()
+        self._bundle_cache: BundleCache = {}
 
-    @property
+    def _initialize_adapter(self) -> None:
+        swagger_version = self.raw_schema.get("swagger")
+        if swagger_version is not None:
+            self._spec_version = swagger_version or "2.0"
+            self.adapter = adapter.v2
+            return
+
+        openapi_version = self.raw_schema.get("openapi")
+        if openapi_version is not None:
+            self._spec_version = openapi_version
+            if openapi_version.startswith("3.1"):
+                self.adapter = adapter.v3_1
+            else:
+                self.adapter = adapter.v3_0
+            return
+
+        raise InvalidSchema("Unable to determine Open API version for this schema.")
+
+    @cached_property
     def specification(self) -> Specification:
-        raise NotImplementedError
+        return Specification.openapi(version=self._spec_version)
 
     def __repr__(self) -> str:
         info = self.raw_schema["info"]
         return f"<{self.__class__.__name__} for {info['title']} {info['version']}>"
 
     def __iter__(self) -> Iterator[str]:
-        return iter(self.raw_schema.get("paths", {}))
+        paths = self._get_paths()
+        if paths is None:
+            return iter(())
+        return iter(paths)
 
     @cached_property
     def default_media_types(self) -> list[str]:
-        raise NotImplementedError
+        return self.adapter.get_default_media_types(self.raw_schema)
+
+    def _get_base_path(self) -> str:
+        return self.adapter.get_base_path(self.raw_schema)
+
+    def _get_paths(self) -> Mapping[str, Any] | None:
+        paths = self.raw_schema.get("paths")
+        if paths is None:
+            return None
+        assert isinstance(paths, Mapping)
+        return cast(Mapping[str, Any], paths)
 
     def _get_operation_map(self, path: str) -> APIOperationMap:
-        path_item = self.raw_schema.get("paths", {})[path]
+        paths = self._get_paths()
+        if paths is None:
+            raise KeyError(path)
+        path_item = paths[path]
         with in_scope(self.resolver, self.location or ""):
             scope, path_item = self._resolve_path_item(path_item)
         self.dispatch_hook("before_process_path", HookContext(), path, path_item)
@@ -164,9 +185,8 @@ class BaseOpenAPISchema(BaseSchema):
 
     def _measure_statistic(self) -> ApiStatistic:
         statistic = ApiStatistic()
-        try:
-            paths = self.raw_schema["paths"]
-        except KeyError:
+        paths = self._get_paths()
+        if paths is None:
             return statistic
 
         resolve = self.resolver.resolve
@@ -231,9 +251,8 @@ class BaseOpenAPISchema(BaseSchema):
         return statistic
 
     def _operation_iter(self) -> Iterator[tuple[str, str, dict[str, Any]]]:
-        try:
-            paths = self.raw_schema["paths"]
-        except KeyError:
+        paths = self._get_paths()
+        if paths is None:
             return
         resolve = self.resolver.resolve
         should_skip = self._should_skip
@@ -265,14 +284,11 @@ class BaseOpenAPISchema(BaseSchema):
         operations and show errors for invalid ones.
         """
         __tracebackhide__ = True
-        try:
-            paths = self.raw_schema["paths"]
-        except KeyError as exc:
-            # This field is optional in Open API 3.1
+        paths = self._get_paths()
+        if paths is None:
             if version.parse(self.specification.version) >= version.parse("3.1"):
                 return
-            # Missing `paths` is not recoverable
-            self._raise_invalid_schema(exc)
+            self._raise_invalid_schema(KeyError("paths"))
 
         context = HookContext()
         # Optimization: local variables are faster than attribute access
@@ -343,14 +359,20 @@ class BaseOpenAPISchema(BaseSchema):
             self._validate()
 
     def _validate(self) -> None:
-        raise NotImplementedError
+        self.adapter.validate_schema(self.raw_schema)
 
     def _iter_parameters(
         self, definition: dict[str, Any], shared_parameters: Sequence[dict[str, Any]]
     ) -> list[OperationParameter]:
         return list(
             self.adapter.iter_parameters(
-                definition, shared_parameters, self.default_media_types, self.resolver, self.adapter
+                definition,
+                shared_parameters,
+                self.default_media_types,
+                self.resolver,
+                self.adapter,
+                self._bundler,
+                self._bundle_cache,
             )
         )
 
@@ -437,17 +459,24 @@ class BaseOpenAPISchema(BaseSchema):
 
     def get_content_types(self, operation: APIOperation, response: Response) -> list[str]:
         """Content types available for this API operation."""
-        raise NotImplementedError
+        return self.adapter.get_response_content_types(operation, response)
+
+    def get_request_payload_content_types(self, operation: APIOperation) -> list[str]:
+        return self.adapter.get_request_payload_content_types(operation)
 
     def get_strategies_from_examples(self, operation: APIOperation, **kwargs: Any) -> list[SearchStrategy[Case]]:
         """Get examples from the API operation."""
-        raise NotImplementedError
+        return get_strategies_from_examples(operation, **kwargs)
 
-    def get_operation_by_id(self, operation_id: str) -> APIOperation:
-        """Get an `APIOperation` instance by its `operationId`."""
+    def find_operation_by_id(self, operation_id: str) -> APIOperation:
+        """Find an `APIOperation` instance by its `operationId`."""
         resolve = self.resolver.resolve
         default_scope = self.resolver.resolution_scope
-        for path, path_item in self.raw_schema.get("paths", {}).items():
+        paths = self._get_paths()
+        if paths is None:
+            self._on_missing_operation(operation_id, None, [])
+        assert paths is not None
+        for path, path_item in paths.items():
             # If the path is behind a reference we have to keep the scope
             # The scope is used to resolve nested components later on
             if "$ref" in path_item:
@@ -462,8 +491,8 @@ class BaseOpenAPISchema(BaseSchema):
                     return self.make_operation(path, method, parameters, operation, scope)
         self._on_missing_operation(operation_id, None, [])
 
-    def get_operation_by_reference(self, reference: str) -> APIOperation:
-        """Get local or external `APIOperation` instance by reference.
+    def find_operation_by_reference(self, reference: str) -> APIOperation:
+        """Find local or external `APIOperation` instance by reference.
 
         Reference example: #/paths/~1users~1{user_id}/patch
         """
@@ -475,6 +504,26 @@ class BaseOpenAPISchema(BaseSchema):
         with in_scope(self.resolver, scope):
             parameters = self._iter_parameters(operation, path_item.get("parameters", []))
         return self.make_operation(path, method, parameters, operation, scope)
+
+    def find_operation_by_path(self, method: str, path: str) -> APIOperation | None:
+        """Find an `APIOperation` by matching an actual request path.
+
+        Matches path templates with parameters, e.g., /users/42 matches /users/{user_id}.
+        Returns None if no operation matches.
+        """
+        from werkzeug.exceptions import MethodNotAllowed, NotFound
+
+        from schemathesis.specs.openapi.stateful.inference import OperationById
+
+        # Match path and method using werkzeug router
+        try:
+            operation_ref, _ = self.analysis.inferencer._adapter.match(path, method=method.upper())
+        except (NotFound, MethodNotAllowed):
+            return None
+
+        if isinstance(operation_ref, OperationById):
+            return self.find_operation_by_id(operation_ref.value)
+        return self.find_operation_by_reference(operation_ref.value)
 
     def get_case_strategy(
         self,
@@ -504,29 +553,50 @@ class BaseOpenAPISchema(BaseSchema):
         return None
 
     def _get_parameter_serializer(self, definitions: list[dict[str, Any]]) -> Callable | None:
-        raise NotImplementedError
+        return self.adapter.get_parameter_serializer(definitions)
 
     def as_state_machine(self) -> type[APIStateMachine]:
         # Apply dependency inference if configured and not already done
-        if self._should_apply_inference():
-            self._apply_dependency_inference()
+        if self.analysis.should_inject_links():
+            self.analysis.inject_links()
         return create_state_machine(self)
-
-    def _should_apply_inference(self) -> bool:
-        """Check if dependency inference should be applied."""
-        return (
-            not self._inference_applied
-            and self.config.phases.stateful.enabled
-            and self.config.phases.stateful.inference.is_algorithm_enabled(InferenceAlgorithm.DEPENDENCY_ANALYSIS)
-        )
-
-    def _apply_dependency_inference(self) -> None:
-        """Apply dependency analysis to infer links between operations."""
-        dependencies.inject_links(self)
-        self._inference_applied = True
 
     def get_tags(self, operation: APIOperation) -> list[str] | None:
         return operation.definition.raw.get("tags")
+
+    def prepare_multipart(
+        self, form_data: dict[str, Any], operation: APIOperation
+    ) -> tuple[list | None, dict[str, Any] | None]:
+        return self.adapter.prepare_multipart(operation, form_data)
+
+    def make_case(
+        self,
+        *,
+        operation: APIOperation,
+        method: str | None = None,
+        path: str | None = None,
+        path_parameters: dict[str, Any] | None = None,
+        headers: dict[str, Any] | CaseInsensitiveDict | None = None,
+        cookies: dict[str, Any] | None = None,
+        query: dict[str, Any] | None = None,
+        body: list | dict[str, Any] | str | int | float | bool | bytes | NotSet = NOT_SET,
+        media_type: str | None = None,
+        meta: CaseMetadata | None = None,
+    ) -> Case:
+        if body is not NOT_SET and media_type is None:
+            media_type = operation._get_default_media_type()
+        return Case(
+            operation=operation,
+            method=method or operation.method.upper(),
+            path=path or operation.path,
+            path_parameters=path_parameters or {},
+            headers=CaseInsensitiveDict() if headers is None else CaseInsensitiveDict(headers),
+            cookies=cookies or {},
+            query=query or {},
+            body=body,
+            media_type=media_type,
+            meta=meta,
+        )
 
     def validate_response(
         self,
@@ -537,22 +607,42 @@ class BaseOpenAPISchema(BaseSchema):
     ) -> bool | None:
         __tracebackhide__ = True
         definition = operation.responses.find_by_status_code(response.status_code)
-        if definition is None or definition.schema is None:
-            # No definition for the given HTTP response, or missing "schema" in the matching definition
+        if definition is None:
             return None
+
+        documented_media_types = self.get_content_types(operation, response)
 
         failures: list[Failure] = []
 
         content_types = response.headers.get("content-type")
-        if content_types is None:
-            all_media_types = self.get_content_types(operation, response)
-            formatted_content_types = [f"\n- `{content_type}`" for content_type in all_media_types]
+        resolved_content_type = content_types[0] if content_types else None
+
+        resolved = definition.get_schema(resolved_content_type)
+        if resolved.schema is None:
+            return None
+
+        try:
+            validator = definition.get_validator_for_schema(resolved.media_type, resolved.schema)
+        except jsonschema.SchemaError as exc:
+            raise InvalidSchema.from_jsonschema_error(
+                exc,
+                path=operation.path,
+                method=operation.method,
+                config=self.config.output,
+                location=SchemaLocation.response_schema(self.specification.version),
+            ) from exc
+        if validator is None:
+            return None
+
+        if resolved_content_type is None:
+            formatted_content_types = [f"\n- `{content_type}`" for content_type in documented_media_types]
             message = f"The following media types are documented in the schema:{''.join(formatted_content_types)}"
-            failures.append(MissingContentType(operation=operation.label, message=message, media_types=all_media_types))
-            # Default content type
-            content_type = "application/json"
+            failures.append(
+                MissingContentType(operation=operation.label, message=message, media_types=documented_media_types)
+            )
+            content_type = resolved.media_type or "application/json"
         else:
-            content_type = content_types[0]
+            content_type = resolved_content_type
 
         context = deserialization.DeserializationContext(operation=operation, case=case)
 
@@ -578,7 +668,7 @@ class BaseOpenAPISchema(BaseSchema):
             return None
 
         try:
-            definition.validator.validate(data)
+            validator.validate(data)
         except jsonschema.SchemaError as exc:
             raise InvalidSchema.from_jsonschema_error(
                 exc,
@@ -642,7 +732,7 @@ class MethodMap(Mapping):
     def _init_operation(self, method: str) -> APIOperation:
         method = method.lower()
         operation = self._path_item[method]
-        schema = cast(BaseOpenAPISchema, self._parent._schema)
+        schema = cast(OpenApiSchema, self._parent._schema)
         path = self._path
         scope = self._scope
         with in_scope(schema.resolver, scope):
@@ -661,189 +751,3 @@ class MethodMap(Mapping):
             if available_methods:
                 message += f" Available methods: {available_methods}"
             raise LookupError(message) from exc
-
-
-class SwaggerV20(BaseOpenAPISchema):
-    def __post_init__(self) -> None:
-        self.adapter = adapter.v2
-        super().__post_init__()
-
-    @property
-    def specification(self) -> Specification:
-        version = self.raw_schema.get("swagger", "2.0")
-        return Specification.openapi(version=version)
-
-    @cached_property
-    def default_media_types(self) -> list[str]:
-        return self.raw_schema.get("consumes", [])
-
-    def _validate(self) -> None:
-        SWAGGER_20_VALIDATOR.validate(self.raw_schema)
-
-    def _get_base_path(self) -> str:
-        return self.raw_schema.get("basePath", "/")
-
-    def get_strategies_from_examples(self, operation: APIOperation, **kwargs: Any) -> list[SearchStrategy[Case]]:
-        """Get examples from the API operation."""
-        return get_strategies_from_examples(operation, **kwargs)
-
-    def get_content_types(self, operation: APIOperation, response: Response) -> list[str]:
-        produces = operation.definition.raw.get("produces", None)
-        if produces:
-            return produces
-        return self.raw_schema.get("produces", [])
-
-    def _get_parameter_serializer(self, definitions: list[dict[str, Any]]) -> Callable | None:
-        return serialization.serialize_swagger2_parameters(definitions)
-
-    def prepare_multipart(
-        self, form_data: dict[str, Any], operation: APIOperation
-    ) -> tuple[list | None, dict[str, Any] | None]:
-        files, data = [], {}
-        # If there is no content types specified for the request or "application/x-www-form-urlencoded" is specified
-        # explicitly, then use it., but if "multipart/form-data" is specified, then use it
-        content_types = self.get_request_payload_content_types(operation)
-        is_multipart = "multipart/form-data" in content_types
-
-        known_fields: dict[str, dict] = {}
-
-        for parameter in operation.body:
-            if COMBINED_FORM_DATA_MARKER in parameter.definition:
-                known_fields.update(parameter.definition["schema"].get("properties", {}))
-
-        def add_file(name: str, value: Any) -> None:
-            if isinstance(value, list):
-                for item in value:
-                    files.append((name, (None, item)))
-            else:
-                files.append((name, value))
-
-        for name, value in form_data.items():
-            param_def = known_fields.get(name)
-            if param_def:
-                if param_def.get("type") == "file" or is_multipart:
-                    add_file(name, value)
-                else:
-                    data[name] = value
-            else:
-                # Unknown field — treat it as a file (safe default under multipart/form-data)
-                add_file(name, value)
-        # `None` is the default value for `files` and `data` arguments in `requests.request`
-        return files or None, data or None
-
-    def get_request_payload_content_types(self, operation: APIOperation) -> list[str]:
-        return self._get_consumes_for_operation(operation.definition.raw)
-
-    def make_case(
-        self,
-        *,
-        operation: APIOperation,
-        method: str | None = None,
-        path: str | None = None,
-        path_parameters: dict[str, Any] | None = None,
-        headers: dict[str, Any] | CaseInsensitiveDict | None = None,
-        cookies: dict[str, Any] | None = None,
-        query: dict[str, Any] | None = None,
-        body: list | dict[str, Any] | str | int | float | bool | bytes | NotSet = NOT_SET,
-        media_type: str | None = None,
-        meta: CaseMetadata | None = None,
-    ) -> Case:
-        if body is not NOT_SET and media_type is None:
-            media_type = operation._get_default_media_type()
-        return Case(
-            operation=operation,
-            method=method or operation.method.upper(),
-            path=path or operation.path,
-            path_parameters=path_parameters or {},
-            headers=CaseInsensitiveDict() if headers is None else CaseInsensitiveDict(headers),
-            cookies=cookies or {},
-            query=query or {},
-            body=body,
-            media_type=media_type,
-            meta=meta,
-        )
-
-    def _get_consumes_for_operation(self, definition: dict[str, Any]) -> list[str]:
-        global_consumes = self.raw_schema.get("consumes", [])
-        consumes = definition.get("consumes", [])
-        if not consumes:
-            consumes = global_consumes
-        return consumes
-
-
-class OpenApi30(SwaggerV20):
-    def __post_init__(self) -> None:
-        if self.specification.version.startswith("3.1"):
-            self.adapter = adapter.v3_1
-        else:
-            self.adapter = adapter.v3_0
-        BaseOpenAPISchema.__post_init__(self)
-
-    @property
-    def specification(self) -> Specification:
-        version = self.raw_schema["openapi"]
-        return Specification.openapi(version=version)
-
-    @cached_property
-    def default_media_types(self) -> list[str]:
-        return []
-
-    def _validate(self) -> None:
-        if self.specification.version.startswith("3.1"):
-            # Currently we treat Open API 3.1 as 3.0 in some regard
-            OPENAPI_31_VALIDATOR.validate(self.raw_schema)
-        else:
-            OPENAPI_30_VALIDATOR.validate(self.raw_schema)
-
-    def _get_base_path(self) -> str:
-        servers = self.raw_schema.get("servers", [])
-        if servers:
-            # assume we're the first server in list
-            server = servers[0]
-            url = server["url"].format(**{k: v["default"] for k, v in server.get("variables", {}).items()})
-            return urlsplit(url).path
-        return "/"
-
-    def get_strategies_from_examples(self, operation: APIOperation, **kwargs: Any) -> list[SearchStrategy[Case]]:
-        """Get examples from the API operation."""
-        return get_strategies_from_examples(operation, **kwargs)
-
-    def get_content_types(self, operation: APIOperation, response: Response) -> list[str]:
-        definition = operation.responses.find_by_status_code(response.status_code)
-        if definition is None:
-            return []
-        return list(definition.definition.get("content", {}).keys())
-
-    def _get_parameter_serializer(self, definitions: list[dict[str, Any]]) -> Callable | None:
-        return serialization.serialize_openapi3_parameters(definitions)
-
-    def get_request_payload_content_types(self, operation: APIOperation) -> list[str]:
-        return [body.media_type for body in operation.body]
-
-    def prepare_multipart(
-        self, form_data: dict[str, Any], operation: APIOperation
-    ) -> tuple[list | None, dict[str, Any] | None]:
-        files = []
-        # Open API 3.0 requires media types to be present. We can get here only if the schema defines
-        # the "multipart/form-data" media type, or any other more general media type that matches it (like `*/*`)
-        schema = {}
-        for body in operation.body:
-            main, sub = media_types.parse(body.media_type)
-            if main in ("*", "multipart") and sub in ("*", "form-data", "mixed"):
-                schema = body.definition.get("schema")
-                break
-        for name, value in form_data.items():
-            property_schema = (schema or {}).get("properties", {}).get(name)
-            if property_schema:
-                if isinstance(value, list):
-                    files.extend([(name, item) for item in value])
-                elif property_schema.get("format") in ("binary", "base64"):
-                    files.append((name, value))
-                else:
-                    files.append((name, (None, value)))
-            elif isinstance(value, list):
-                files.extend([(name, item) for item in value])
-            else:
-                files.append((name, (None, value)))
-        # `None` is the default value for `files` and `data` arguments in `requests.request`
-        return files or None, None
