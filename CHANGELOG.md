@@ -4,6 +4,7 @@
 
 ### :rocket: Added
 
+- Support for `pytest>=9.0`. [#3312](https://github.com/schemathesis/schemathesis/issues/3312) 
 - OpenAPI-aware authentication via `[auth.openapi.<scheme>]` config. Automatically aligns with schema security definitions and warns about unused/misnamed schemes. [#1710](https://github.com/schemathesis/schemathesis/issues/1710)
 - Display configuration file path in CLI output
 
@@ -11,6 +12,14 @@
 
 - ~20% faster VCR cassette recording through output sanitization caching.
 - ~10% faster CLI due to caching of config lookups.
+
+### :bug: Fixed
+
+- Missing Content-Type headers in multipart form data when encoding `contentType` is specified in OpenAPI schema.
+
+### :fire: Removed
+
+- Python 3.9 support.
 
 ## [4.4.4](https://github.com/schemathesis/schemathesis/compare/v4.4.3...v4.4.4) - 2025-11-08
 

@@ -9,7 +9,7 @@ description = "Property-based testing framework for Open API and GraphQL based a
 keywords = ["pytest", "hypothesis", "openapi", "graphql", "testing"]
 authors = [{ name = "Dmitry Dygalo", email = "dmitry@dygalo.dev" }]
 maintainers = [{ name = "Dmitry Dygalo", email = "dmitry@dygalo.dev" }]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = "MIT"
 readme = "README.md"
 include = ["src/schemathesis/py.typed"]
@@ -22,7 +22,6 @@ classifiers = [
   "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
@@ -44,7 +43,7 @@ dependencies = [
   "junit-xml>=1.9,<2.0",
   "pyrate-limiter>=3.0,<4.0",
   "pytest-subtests>=0.11,<0.15.0",
-  "pytest>=8,<9",
+  "pytest>=8,<10",
   "PyYAML>=5.1,<7.0",
   "requests>=2.22,<3",
   "rich>=13.9.4",
@@ -68,7 +67,7 @@ tests = [
   "pytest-trio>=0.8,<1.0",
   "pytest-xdist>=3,<4.0",
   "strawberry-graphql[fastapi]>=0.109.0",
-  "syrupy>=2,<5.0",
+  "syrupy>=4,<6.0",
   "tomli-w>=1.2.0",
   "trustme>=0.9.0,<1.0",
 ]
@@ -117,7 +116,7 @@ exclude_lines = [
 
 [tool.ruff]
 line-length = 120
-target-version = "py39"
+target-version = "py310"
 
 [tool.ruff.lint]
 select = [
