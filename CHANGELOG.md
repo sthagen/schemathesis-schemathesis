@@ -1,6 +1,14 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.4.4...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.5.1...HEAD) - TBD
+
+## [4.5.1](https://github.com/schemathesis/schemathesis/compare/v4.5.0...v4.5.1) - 2025-11-12
+
+### :bug: Fixed
+
+- Fix propagation of `base_url` / session data from `Case.call_and_validate`, so auth checks no longer crash when schemas are loaded from files. [#3318](https://github.com/schemathesis/schemathesis/issues/3318)
+
+## [4.5.0](https://github.com/schemathesis/schemathesis/compare/v4.4.4...v4.5.0) - 2025-11-12
 
 ### :rocket: Added
 
@@ -15,7 +23,9 @@
 
 ### :bug: Fixed
 
+- Comma-separated Content-Type strings used literally in multipart requests instead of selecting one type (e.g., `contentType: "image/png, image/jpeg"`).
 - Missing Content-Type headers in multipart form data when encoding `contentType` is specified in OpenAPI schema.
+- False negatives in negative testing mode when custom media type strategies are used with binary format request bodies.
 
 ### :fire: Removed
 

@@ -33,6 +33,7 @@ from schemathesis.openapi.generation.filters import is_valid_urlencoded
 from schemathesis.schemas import APIOperation
 from schemathesis.specs.openapi.adapter.parameters import FORM_MEDIA_TYPES, OpenApiBody, OpenApiParameterSet
 from schemathesis.specs.openapi.negative.mutations import MutationMetadata
+from schemathesis.specs.openapi.negative.utils import is_binary_format
 
 from ... import auths
 from ...generation import GenerationMode
@@ -139,15 +140,26 @@ def openapi_cases(
                 "application",
                 "x-www-form-urlencoded",
             ):
+                # Helper to transform FormBodyWithContentTypes while preserving it
+                def prepare_urlencoded_form(x: Any) -> Any:
+                    if isinstance(x, FormBodyWithContentTypes):
+                        return FormBodyWithContentTypes(body=prepare_urlencoded(x.body), content_types=x.content_types)
+                    return prepare_urlencoded(x)
+
+                def is_valid_urlencoded_form(x: Any) -> bool:
+                    if isinstance(x, FormBodyWithContentTypes):
+                        return is_valid_urlencoded(x.body)
+                    return is_valid_urlencoded(x)
+
                 if body_generator.is_negative:
                     # For negative strategies, unwrap GeneratedValue, apply transformation, then rewrap
                     strategy = strategy.map(
-                        lambda x: GeneratedValue(prepare_urlencoded(x.value), x.meta)
+                        lambda x: GeneratedValue(prepare_urlencoded_form(x.value), x.meta)
                         if isinstance(x, GeneratedValue)
-                        else prepare_urlencoded(x)
-                    ).filter(lambda x: is_valid_urlencoded(x.value if isinstance(x, GeneratedValue) else x))
+                        else prepare_urlencoded_form(x)
+                    ).filter(lambda x: is_valid_urlencoded_form(x.value if isinstance(x, GeneratedValue) else x))
                 else:
-                    strategy = strategy.map(prepare_urlencoded).filter(is_valid_urlencoded)
+                    strategy = strategy.map(prepare_urlencoded_form).filter(is_valid_urlencoded_form)
             body_result = draw(strategy)
             body_metadata = None
             # Negative strategy returns GeneratedValue, positive returns just value
@@ -256,13 +268,21 @@ def openapi_cases(
         }[phase]
         phase_data = cast(ExamplesPhaseData | FuzzingPhaseData | StatefulPhaseData, _phase_data)
 
+    # Extract body and content types if using form encoding
+    body_value = body_.value
+    multipart_content_types = None
+    if isinstance(body_value, FormBodyWithContentTypes):
+        multipart_content_types = body_value.content_types
+        body_value = body_value.body
+
     instance = operation.Case(
         media_type=media_type,
         path_parameters=path_parameters_.value or {},
         headers=headers_.value or CaseInsensitiveDict(),
         cookies=cookies_.value or {},
         query=query_.value or {},
-        body=body_.value,
+        body=body_value,
+        multipart_content_types=multipart_content_types,
         _meta=CaseMetadata(
             generation=GenerationInfo(
                 time=time.monotonic() - start,
@@ -291,6 +311,29 @@ def openapi_cases(
 
 
 OPTIONAL_BODY_RATE = 0.05
+
+
+@dataclass(slots=True)
+class FormBodyWithContentTypes:
+    """Form body data with selected content types for properties."""
+
+    body: dict[str, Any]
+    content_types: dict[str, str]  # property_name -> selected content type
+
+
+def _maybe_set_optional_body(
+    strategy: st.SearchStrategy,
+    parameter: OpenApiBody,
+    draw: st.DrawFn,
+) -> st.SearchStrategy:
+    """Add NOT_SET option to strategy for optional body parameters."""
+    if (
+        not parameter.is_required
+        and draw(st.floats(min_value=0.0, max_value=1.0, allow_infinity=False, allow_nan=False, allow_subnormal=False))
+        < OPTIONAL_BODY_RATE
+    ):
+        strategy |= st.just(NOT_SET)
+    return strategy
 
 
 def _find_media_type_strategy(content_type: str) -> st.SearchStrategy[bytes] | None:
@@ -330,7 +373,7 @@ def _build_form_strategy_with_encoding(
 
     Supports wildcard media type matching (e.g., "image/*" matches "image/png").
 
-    Returns `None` if no custom encoding with registered strategies is found.
+    Returns `None` if no custom encoding with registered strategies or comma-separated content types is found.
     """
     schema = parameter.optimized_schema
     if not isinstance(schema, dict) or schema.get("type") != "object":
@@ -340,8 +383,11 @@ def _build_form_strategy_with_encoding(
     if not properties:
         return None
 
-    # Check which properties have custom content types with registered strategies
-    custom_property_strategies = {}
+    # Maps property_name to strategy returning (content_type, data) tuple
+    property_with_content_type_strategies: dict[str, st.SearchStrategy] = {}
+    # Maps property_name to list of content types (for comma-separated without custom strategy)
+    property_content_type_selections: dict[str, list[str]] = {}
+
     for property_name in properties:
         content_type = parameter.get_property_content_type(property_name)
 
@@ -356,19 +402,35 @@ def _build_form_strategy_with_encoding(
             for ct in content_types:
                 strategy = _find_media_type_strategy(ct)
                 if strategy is not None:
-                    strategies_for_types.append(strategy)
+                    # Pair strategy with its content type so we know which was selected
+                    strategies_for_types.append(st.tuples(st.just(ct), strategy))
 
             if strategies_for_types:
-                custom_property_strategies[property_name] = st.one_of(*strategies_for_types)
+                # In negative mode with binary format, custom strategies always produce valid data
+                # Skip them to allow structural mutations instead
+                if generation_mode.is_negative:
+                    prop_schema = properties.get(property_name, {})
+                    if is_binary_format(prop_schema):
+                        # Skip custom strategy but still select content type if multiple
+                        if len(content_types) > 1:
+                            property_content_type_selections[property_name] = content_types
+                        continue
+                # Store strategy that returns (content_type, data) tuple
+                property_with_content_type_strategies[property_name] = st.one_of(*strategies_for_types)
+            elif len(content_types) > 1:
+                # No custom strategy found, but multiple content types specified
+                # Store them for random selection
+                property_content_type_selections[property_name] = content_types
 
-    if not custom_property_strategies:
+    if not property_with_content_type_strategies and not property_content_type_selections:
         return None
 
     # Build strategies for properties
     property_strategies = {}
     for property_name, subschema in properties.items():
-        if property_name in custom_property_strategies:
-            property_strategies[property_name] = custom_property_strategies[property_name]
+        if property_name in property_with_content_type_strategies:
+            # This property has custom content type - will be handled separately
+            continue
         else:
             from schemathesis.specs.openapi.schemas import OpenApiSchema
 
@@ -389,8 +451,10 @@ def _build_form_strategy_with_encoding(
     optional_strategies = {k: st.just(NOT_SET) | v for k, v in property_strategies.items() if k not in required}
 
     @st.composite  # type: ignore[misc]
-    def build_body(draw: st.DrawFn) -> dict[str, Any]:
+    def build_body(draw: st.DrawFn) -> FormBodyWithContentTypes:
         body: dict[str, Any] = {}
+        selected_content_types: dict[str, str] = {}
+
         # Generate required properties
         for key, strategy in required_strategies.items():
             body[key] = draw(strategy)
@@ -399,7 +463,28 @@ def _build_form_strategy_with_encoding(
             value = draw(strategy)
             if value is not NOT_SET:
                 body[key] = value
-        return body
+
+        # Generate properties with content type strategies (respecting optional)
+        for property_name, ct_strategy in property_with_content_type_strategies.items():
+            if property_name in required:
+                # Required - always generate
+                content_type, data = draw(ct_strategy)
+                body[property_name] = data
+                selected_content_types[property_name] = content_type
+            else:
+                # Optional - may omit
+                should_include = draw(st.booleans())
+                if should_include:
+                    content_type, data = draw(ct_strategy)
+                    body[property_name] = data
+                    selected_content_types[property_name] = content_type
+
+        # For properties with comma-separated content types (but no custom strategy),
+        # randomly select one of the content types
+        for property_name, content_type_list in property_content_type_selections.items():
+            selected_content_types[property_name] = draw(st.sampled_from(content_type_list))
+
+        return FormBodyWithContentTypes(body=body, content_types=selected_content_types)
 
     return build_body()
 
@@ -420,19 +505,21 @@ def _get_body_strategy(
     # Check for custom media type strategy
     custom_strategy = _find_media_type_strategy(parameter.media_type)
     if custom_strategy is not None:
+        # Custom strategies always generate valid data for their media type.
+        # In negative mode with permissive schemas (like type: string, format: binary),
+        # any bytes data is valid, so custom strategies can't produce truly invalid data.
+        # Use positive mode strategy instead to avoid false negatives.
+        if generation_mode.is_negative:
+            schema = parameter.definition.get("schema", {})
+            if is_binary_format(schema):
+                # Use default strategy generation which can produce structural invalidity
+                strategy = parameter.get_strategy(operation, generation_config, generation_mode)
+                return _maybe_set_optional_body(strategy, parameter, draw)
         return custom_strategy
 
     # Use the cached strategy from the parameter
     strategy = parameter.get_strategy(operation, generation_config, generation_mode)
-
-    # It is likely will be rejected, hence choose it rarely
-    if (
-        not parameter.is_required
-        and draw(st.floats(min_value=0.0, max_value=1.0, allow_infinity=False, allow_nan=False, allow_subnormal=False))
-        < OPTIONAL_BODY_RATE
-    ):
-        strategy |= st.just(NOT_SET)
-    return strategy
+    return _maybe_set_optional_body(strategy, parameter, draw)
 
 
 def get_parameters_value(
