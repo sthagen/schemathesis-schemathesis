@@ -24,6 +24,7 @@ from schemathesis.auths import AuthStorage, AuthStorageMark
 from schemathesis.config import GenerationConfig, ProjectConfig
 from schemathesis.core import INJECTED_PATH_PARAMETER_KEY, NOT_SET, NotSet, SpecificationFeature, media_types
 from schemathesis.core.errors import (
+    IncorrectUsage,
     InfiniteRecursiveReference,
     InvalidSchema,
     MalformedMediaType,
@@ -39,7 +40,7 @@ from schemathesis.generation import GenerationMode, coverage
 from schemathesis.generation.case import Case
 from schemathesis.generation.hypothesis import examples, setup
 from schemathesis.generation.hypothesis.examples import add_single_example
-from schemathesis.generation.hypothesis.given import GivenInput
+from schemathesis.generation.hypothesis.given import GivenInput, format_given_and_schema_examples_error
 from schemathesis.generation.meta import (
     CaseMetadata,
     ComponentInfo,
@@ -167,6 +168,22 @@ def create_test(
         and specification.supports_feature(SpecificationFeature.EXAMPLES)
     ):
         phases_config = config.project.phases_for(operation=operation)
+        # Check if user provided custom strategies via @schema.given()
+        # AND the operation actually has examples
+        # These are incompatible because examples only provide 'case' while custom strategies require additional parameters
+        if config.given_kwargs:
+            # Check if there are actually examples to add
+            try:
+                example_strategies = list(operation.get_strategies_from_examples(**strategy_kwargs))
+            except Exception:
+                # If we can't get examples (invalid schema, etc), let add_examples handle it
+                example_strategies = []
+
+            if example_strategies:
+                # Get the parameter names from given_kwargs to show in error message
+                param_names = ", ".join(sorted(config.given_kwargs.keys()))
+                raise IncorrectUsage(format_given_and_schema_examples_error(param_names))
+
         hypothesis_test = add_examples(
             hypothesis_test,
             operation,
@@ -599,6 +616,8 @@ def _iter_coverage_cases(
         template.add_parameter(location, name, value)
         generators[(location, name)] = gen
     template_time = instant.elapsed
+    has_required_body = operation.body and any(b.is_required for b in operation.body)
+    has_generated_required_body = False
     if operation.body:
         for body in operation.body:
             instant = Instant()
@@ -633,6 +652,8 @@ def _iter_coverage_cases(
                 body.media_type in MEDIA_TYPES and not isinstance(value.value, (str, bytes))
             ):
                 continue
+            if body.is_required:
+                has_generated_required_body = True
             elapsed = instant.elapsed
             if "body" not in template:
                 template_time += elapsed
@@ -683,7 +704,7 @@ def _iter_coverage_cases(
                     )
                 except StopIteration:
                     break
-    elif GenerationMode.POSITIVE in generation_modes:
+    elif GenerationMode.POSITIVE in generation_modes and (not has_required_body or has_generated_required_body):
         data = template.unmodified()
         seen_positive.insert(data.kwargs)
         yield operation.Case(
@@ -712,9 +733,11 @@ def _iter_coverage_cases(
 
             if value.generation_mode == GenerationMode.NEGATIVE:
                 seen_negative.insert(data.kwargs)
-            elif value.generation_mode == GenerationMode.POSITIVE and not seen_positive.insert(data.kwargs):
-                # Was already generated before
-                continue
+            elif value.generation_mode == GenerationMode.POSITIVE:
+                if has_required_body and not has_generated_required_body:
+                    continue
+                if not seen_positive.insert(data.kwargs):
+                    continue
 
             yield operation.Case(
                 **data.kwargs,
@@ -899,7 +922,9 @@ def _iter_coverage_cases(
         # 1. Generate only required properties
         if required and all_params != required:
             only_required = {k: v for k, v in base_container.items() if k in required}
-            if GenerationMode.POSITIVE in generation_modes:
+            if GenerationMode.POSITIVE in generation_modes and not (
+                has_required_body and not has_generated_required_body
+            ):
                 yield make_case(
                     only_required,
                     CoverageScenario.OBJECT_ONLY_REQUIRED,
@@ -928,15 +953,16 @@ def _iter_coverage_cases(
         for opt_param in optional:
             combo = {k: v for k, v in base_container.items() if k in required or k == opt_param}
             if combo != base_container and GenerationMode.POSITIVE in generation_modes:
-                yield make_case(
-                    combo,
-                    CoverageScenario.OBJECT_REQUIRED_AND_OPTIONAL,
-                    f"All required properties and optional '{opt_param}'",
-                    location,
-                    None,
-                    GenerationMode.POSITIVE,
-                    Instant(),
-                )
+                if not (has_required_body and not has_generated_required_body):
+                    yield make_case(
+                        combo,
+                        CoverageScenario.OBJECT_REQUIRED_AND_OPTIONAL,
+                        f"All required properties and optional '{opt_param}'",
+                        location,
+                        None,
+                        GenerationMode.POSITIVE,
+                        Instant(),
+                    )
                 if GenerationMode.NEGATIVE in generation_modes:
                     subschema = _combination_schema(combo, required, parameter_set)
                     for case in _yield_negative(subschema, location, is_required=bool(required)):
@@ -950,7 +976,11 @@ def _iter_coverage_cases(
                             yield case
 
         # 3. Generate one combination for each size from 2 to N-1 of optional parameters
-        if len(optional) > 1 and GenerationMode.POSITIVE in generation_modes:
+        if (
+            len(optional) > 1
+            and GenerationMode.POSITIVE in generation_modes
+            and not (has_required_body and not has_generated_required_body)
+        ):
             for size in range(2, len(optional)):
                 for combination in combinations(optional, size):
                     combo = {k: v for k, v in base_container.items() if k in required or k in combination}

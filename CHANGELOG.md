@@ -1,6 +1,19 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.5.2...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.5.4...HEAD) - TBD
+
+## [4.5.4](https://github.com/schemathesis/schemathesis/compare/v4.5.3...v4.5.4) - 2025-11-18
+
+### :bug: Fixed
+
+- Invalid examples extracted from schemas with `allOf` and required fields. [#3333](https://github.com/schemathesis/schemathesis/issues/3333)
+
+## [4.5.3](https://github.com/schemathesis/schemathesis/compare/v4.5.2...v4.5.3) - 2025-11-17
+
+### :bug: Fixed
+
+- Positive test cases generated without required body. [#3327](https://github.com/schemathesis/schemathesis/issues/3327)
+- Incorrect error message when combining `@schema.given()` with schema examples. [#3328](https://github.com/schemathesis/schemathesis/issues/3328)
 
 ## [4.5.2](https://github.com/schemathesis/schemathesis/compare/v4.5.1...v4.5.2) - 2025-11-15
 
