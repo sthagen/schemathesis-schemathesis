@@ -30,6 +30,7 @@ from schemathesis.generation.meta import (
     TestPhase,
 )
 from schemathesis.openapi.generation.filters import is_valid_urlencoded
+from schemathesis.resources import ExtraDataSource
 from schemathesis.schemas import APIOperation
 from schemathesis.specs.openapi.adapter.parameters import FORM_MEDIA_TYPES, OpenApiBody, OpenApiParameterSet
 from schemathesis.specs.openapi.negative.mutations import MutationMetadata
@@ -71,6 +72,7 @@ def openapi_cases(
     body: Any = NOT_SET,
     media_type: str | None = None,
     phase: TestPhase = TestPhase.FUZZING,
+    extra_data_source: ExtraDataSource | None = None,
 ) -> Any:
     """A strategy that creates `Case` instances.
 
@@ -91,16 +93,48 @@ def openapi_cases(
     ctx = HookContext(operation=operation)
 
     path_parameters_ = generate_parameter(
-        ParameterLocation.PATH, path_parameters, operation, draw, ctx, hooks, generation_mode, generation_config
+        ParameterLocation.PATH,
+        path_parameters,
+        operation,
+        draw,
+        ctx,
+        hooks,
+        generation_mode,
+        generation_config,
+        extra_data_source=extra_data_source,
     )
     headers_ = generate_parameter(
-        ParameterLocation.HEADER, headers, operation, draw, ctx, hooks, generation_mode, generation_config
+        ParameterLocation.HEADER,
+        headers,
+        operation,
+        draw,
+        ctx,
+        hooks,
+        generation_mode,
+        generation_config,
+        extra_data_source=extra_data_source,
     )
     cookies_ = generate_parameter(
-        ParameterLocation.COOKIE, cookies, operation, draw, ctx, hooks, generation_mode, generation_config
+        ParameterLocation.COOKIE,
+        cookies,
+        operation,
+        draw,
+        ctx,
+        hooks,
+        generation_mode,
+        generation_config,
+        extra_data_source=extra_data_source,
     )
     query_ = generate_parameter(
-        ParameterLocation.QUERY, query, operation, draw, ctx, hooks, generation_mode, generation_config
+        ParameterLocation.QUERY,
+        query,
+        operation,
+        draw,
+        ctx,
+        hooks,
+        generation_mode,
+        generation_config,
+        extra_data_source=extra_data_source,
     )
 
     if body is NOT_SET:
@@ -116,7 +150,9 @@ def openapi_cases(
             else:
                 candidates = operation.body.items
             parameter = draw(st.sampled_from(candidates))
-            strategy = _get_body_strategy(parameter, operation, generation_config, draw, body_generator)
+            strategy = _get_body_strategy(
+                parameter, operation, generation_config, draw, body_generator, extra_data_source=extra_data_source
+            )
             strategy = apply_hooks(operation, ctx, hooks, strategy, ParameterLocation.BODY)
             # Parameter may have a wildcard media type. In this case, choose any supported one
             possible_media_types = sorted(
@@ -389,15 +425,16 @@ def _build_form_strategy_with_encoding(
     property_content_type_selections: dict[str, list[str]] = {}
 
     for property_name in properties:
-        content_type = parameter.get_property_content_type(property_name)
+        raw_content_type = parameter.get_property_content_type(property_name)
 
-        if content_type is not None and not isinstance(content_type, str):
-            # Happens in broken schemas
-            continue  # type: ignore[unreachable]
+        # contentType can be a string (or comma-separated list) or an array of strings per the spec
+        content_types: list[str] = []
+        if isinstance(raw_content_type, str):
+            content_types = [ct.strip() for ct in raw_content_type.split(",")]
+        elif isinstance(raw_content_type, list):
+            content_types = [ct.strip() for ct in raw_content_type if isinstance(ct, str)]
 
-        if content_type:
-            # Handle multiple content types (e.g., "image/png, image/jpeg")
-            content_types = [ct.strip() for ct in content_type.split(",")]
+        if content_types:
             strategies_for_types = []
             for ct in content_types:
                 strategy = _find_media_type_strategy(ct)
@@ -495,6 +532,7 @@ def _get_body_strategy(
     generation_config: GenerationConfig,
     draw: st.DrawFn,
     generation_mode: GenerationMode,
+    extra_data_source: ExtraDataSource | None = None,
 ) -> st.SearchStrategy:
     # Check for custom encoding in form bodies (multipart/form-data or application/x-www-form-urlencoded)
     if parameter.media_type in FORM_MEDIA_TYPES:
@@ -513,12 +551,16 @@ def _get_body_strategy(
             schema = parameter.definition.get("schema", {})
             if is_binary_format(schema):
                 # Use default strategy generation which can produce structural invalidity
-                strategy = parameter.get_strategy(operation, generation_config, generation_mode)
+                strategy = parameter.get_strategy(
+                    operation, generation_config, generation_mode, extra_data_source=extra_data_source
+                )
                 return _maybe_set_optional_body(strategy, parameter, draw)
         return custom_strategy
 
     # Use the cached strategy from the parameter
-    strategy = parameter.get_strategy(operation, generation_config, generation_mode)
+    strategy = parameter.get_strategy(
+        operation, generation_config, generation_mode, extra_data_source=extra_data_source
+    )
     return _maybe_set_optional_body(strategy, parameter, draw)
 
 
@@ -531,6 +573,7 @@ def get_parameters_value(
     hooks: HookDispatcher | None,
     generation_mode: GenerationMode,
     generation_config: GenerationConfig,
+    extra_data_source: ExtraDataSource | None = None,
 ) -> tuple[dict[str, Any] | None, Any]:
     """Get the final value for the specified location.
 
@@ -538,14 +581,23 @@ def get_parameters_value(
     generate those parts.
     """
     if value is None:
-        strategy = get_parameters_strategy(operation, generation_mode, location, generation_config)
+        strategy = get_parameters_strategy(
+            operation, generation_mode, location, generation_config, extra_data_source=extra_data_source
+        )
         strategy = apply_hooks(operation, ctx, hooks, strategy, location)
         result = draw(strategy)
         # Negative strategy returns GeneratedValue, positive returns just value
         if isinstance(result, GeneratedValue):
             return result.value, result.meta
         return result, None
-    strategy = get_parameters_strategy(operation, generation_mode, location, generation_config, exclude=value.keys())
+    strategy = get_parameters_strategy(
+        operation,
+        generation_mode,
+        location,
+        generation_config,
+        exclude=value.keys(),
+        extra_data_source=extra_data_source,
+    )
     strategy = apply_hooks(operation, ctx, hooks, strategy, location)
     new = draw(strategy)
     metadata = None
@@ -590,6 +642,7 @@ def generate_parameter(
     hooks: HookDispatcher | None,
     generator: GenerationMode,
     generation_config: GenerationConfig,
+    extra_data_source: ExtraDataSource | None = None,
 ) -> ValueContainer:
     """Generate a value for a parameter.
 
@@ -603,7 +656,15 @@ def generate_parameter(
         # If nothing else will be negated, then skip the test completely
         generator = GenerationMode.POSITIVE
     value, metadata = get_parameters_value(
-        explicit, location, draw, operation, ctx, hooks, generator, generation_config
+        explicit,
+        location,
+        draw,
+        operation,
+        ctx,
+        hooks,
+        generator,
+        generation_config,
+        extra_data_source=extra_data_source,
     )
     used_generator: GenerationMode | None = generator
     if value == explicit:
@@ -642,11 +703,18 @@ def get_parameters_strategy(
     location: ParameterLocation,
     generation_config: GenerationConfig,
     exclude: Iterable[str] = (),
+    extra_data_source: ExtraDataSource | None = None,
 ) -> st.SearchStrategy:
     """Create a new strategy for the case's component from the API operation parameters."""
     container = getattr(operation, location.container_name)
     if container:
-        return container.get_strategy(operation, generation_config, generation_mode, exclude)
+        return container.get_strategy(
+            operation,
+            generation_config,
+            generation_mode,
+            exclude,
+            extra_data_source=extra_data_source,
+        )
     # No parameters defined for this location
     return st.none()
 
