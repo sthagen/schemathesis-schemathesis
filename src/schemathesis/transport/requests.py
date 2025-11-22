@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from schemathesis.core import NotSet
+from schemathesis.core.errors import IncorrectUsage
 from schemathesis.core.rate_limit import ratelimit
 from schemathesis.core.transforms import merge_at
 from schemathesis.core.transport import DEFAULT_RESPONSE_TIMEOUT, Response
@@ -96,6 +97,7 @@ class RequestsTransport(BaseTransport["requests.Session"]):
         timeout = config.request_timeout_for(operation=case.operation)
         verify = config.tls_verify_for(operation=case.operation)
         cert = config.request_cert_for(operation=case.operation)
+        proxies = config.proxy_for(operation=case.operation)
 
         if session is not None and session.headers:
             # These headers are explicitly provided via config or CLI args.
@@ -119,6 +121,8 @@ class RequestsTransport(BaseTransport["requests.Session"]):
             if key not in ("headers", "cookies", "params") or key not in data:
                 data[key] = value
         data.setdefault("timeout", DEFAULT_RESPONSE_TIMEOUT)
+        if proxies is not None:
+            data.setdefault("proxies", {"all": proxies})
 
         current_session_headers: MutableMapping[str, Any] = {}
         current_session_auth = None
@@ -178,7 +182,7 @@ def validate_vanilla_requests_kwargs(data: dict[str, Any]) -> None:
             if frame.function == "call_and_validate":
                 method_name = "call_and_validate"
                 break
-        raise RuntimeError(
+        raise IncorrectUsage(
             "The `base_url` argument is required when specifying a schema via a file, so Schemathesis knows where to send the data. \n"
             f"Pass `base_url` either to the `schemathesis.openapi.from_*` loader or to the `Case.{method_name}`.\n"
             f"If you use the ASGI integration, please supply your test client "

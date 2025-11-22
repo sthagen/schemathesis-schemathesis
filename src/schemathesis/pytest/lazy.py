@@ -41,10 +41,10 @@ def get_all_tests(
     *,
     schema: BaseSchema,
     test_func: Callable,
-    settings: hypothesis.settings | None = None,
-    seed: int | None = None,
-    as_strategy_kwargs: Callable[[APIOperation], dict[str, Any]] | None = None,
-    given_kwargs: dict[str, GivenInput] | None = None,
+    settings: hypothesis.settings | None,
+    seed: int | None,
+    as_strategy_kwargs: Callable[[APIOperation], dict[str, Any]] | None,
+    given_kwargs: dict[str, GivenInput] | None,
 ) -> Generator[Result[tuple[APIOperation, Callable], InvalidSchema], None, None]:
     """Generate all operations and Hypothesis tests for them."""
     for result in schema.get_all_operations():
@@ -65,11 +65,13 @@ def get_all_tests(
             if phases.coverage.enabled:
                 modes.append(HypothesisTestMode.COVERAGE)
 
+            # Use fuzzing phase settings if fuzzing is enabled, since only fuzzing uses max_examples
+            phase = "fuzzing" if HypothesisTestMode.FUZZING in modes else None
             test = create_test(
                 operation=operation,
                 test_func=test_func,
                 config=HypothesisTestConfig(
-                    settings=settings or schema.config.get_hypothesis_settings(operation=operation),
+                    settings=settings or schema.config.get_hypothesis_settings(operation=operation, phase=phase),
                     modes=modes,
                     seed=seed,
                     project=schema.config,
@@ -250,6 +252,7 @@ class LazySchema:
                         settings=settings,
                         as_strategy_kwargs=as_strategy_kwargs,
                         given_kwargs=given_kwargs,
+                        seed=schema.config.seed,
                     )
                 )
                 if not tests:

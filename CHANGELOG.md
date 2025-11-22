@@ -1,15 +1,32 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.5.4...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.6.0...HEAD) - TBD
+
+## [4.6.0](https://github.com/schemathesis/schemathesis/compare/v4.5.4...v4.6.0) - 2025-11-22
 
 ### :rocket: Added
 
 - **CLI**: Dependency-based operation ordering in non-stateful tests.
 - **CLI**: Capture and reuse of successful API responses in the fuzzing phase.
 
+### :racing_car: Performance
+
+- Response deserialization caching for YAML and custom formats.
+
 ### :bug: Fixed
 
+- **pytest**: Reproduction code is no longer shown for configuration errors like missing `base_url`.
+- **pytest**: Seed from schema config is now properly applied to tests.
+- **pytest**: Proxy from schema config is now properly applied to tests.
+- **pytest**: Fuzzing phase-specific generation config (e.g., `max_examples`) is now properly applied to tests.
+- `schemathesis.openapi.from_url()` now uses `wait_for_schema` from config when not explicitly provided.
+- Stateful testing now supports custom deserializers for non-JSON response formats.
+- Crash in coverage phase when encountering `items: false` with `prefixItems` in OpenAPI 3.1.0 schemas.
 - Custom media type strategies now apply when `encoding.contentType` is an array. [#3339](https://github.com/schemathesis/schemathesis/issues/3339)
+- False positives for `format: binary` and `format: byte` in negative testing.
+- False positives for `application/x-www-form-urlencoded` bodies in negative testing. [#3338](https://github.com/schemathesis/schemathesis/issues/3338)
+- Internal error during negative testing of `application/x-www-form-urlencoded` with WSGI apps.
+- Infinite recursion during the examples phase if `allOf` contained `$ref` that required bundling.
 
 ## [4.5.4](https://github.com/schemathesis/schemathesis/compare/v4.5.3...v4.5.4) - 2025-11-18
 

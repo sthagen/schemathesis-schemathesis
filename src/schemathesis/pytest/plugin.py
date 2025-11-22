@@ -161,15 +161,18 @@ class SchemathesisCase(PyCollector):
                 if phases.coverage.enabled:
                     modes.append(HypothesisTestMode.COVERAGE)
 
+                # Use fuzzing phase settings if fuzzing is enabled, since only fuzzing uses max_examples
+                phase = "fuzzing" if HypothesisTestMode.FUZZING in modes else None
                 funcobj = create_test(
                     operation=operation,
                     test_func=self.test_function,
                     config=HypothesisTestConfig(
                         modes=modes,
-                        settings=self.schema.config.get_hypothesis_settings(operation=operation),
+                        settings=self.schema.config.get_hypothesis_settings(operation=operation, phase=phase),
                         given_kwargs=self.given_kwargs,
                         project=self.schema.config,
                         as_strategy_kwargs=as_strategy_kwargs,
+                        seed=self.schema.config.seed,
                     ),
                 )
                 if inspect.iscoroutinefunction(self.test_function):
