@@ -1,6 +1,13 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.6.0...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.6.1...HEAD) - TBD
+
+## [4.6.1](https://github.com/schemathesis/schemathesis/compare/v4.6.0...v4.6.1) - 2025-11-23
+
+### :bug: Fixed
+
+- False positive in `negative_data_rejection` check for `text/plain` and `application/octet-stream` endpoints where non-string values become valid after serialization.
+- Authentication headers are no longer re-applied during negative testing when intentionally removed. [#3355](https://github.com/schemathesis/schemathesis/issues/3355)
 
 ## [4.6.0](https://github.com/schemathesis/schemathesis/compare/v4.5.4...v4.6.0) - 2025-11-22
 
