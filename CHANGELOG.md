@@ -1,10 +1,17 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.6.2...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.6.3...HEAD) - TBD
+
+### :bug: Fixed
+
+- Crash when handling connection errors with empty header values.
+
+## [4.6.3](https://github.com/schemathesis/schemathesis/compare/v4.6.2...v4.6.3) - 2025-11-26
 
 ### :bug: Fixed
 
 - Incomplete fix for false positive `API rejected schema-compliant request` for `application/x-www-form-urlencoded` with required body. [#3360](https://github.com/schemathesis/schemathesis/issues/3360)
+- Fuzzing phase not generating format-violating values for `format` constraints like `uuid`.
 
 ## [4.6.2](https://github.com/schemathesis/schemathesis/compare/v4.6.1...v4.6.2) - 2025-11-25
 
