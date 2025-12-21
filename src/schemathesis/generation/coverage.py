@@ -90,6 +90,17 @@ FORMAT_STRATEGIES = {**BUILT_IN_STRING_FORMATS, **get_default_format_strategies(
 
 UNKNOWN_PROPERTY_KEY = "x-schemathesis-unknown-property"
 UNKNOWN_PROPERTY_VALUE = 42
+ADDITIONAL_PROPERTY_KEY_BASE = "x-schemathesis-additional"
+
+
+def _generate_additional_property_key(existing_keys: set[str]) -> str:
+    """Generate a key for additional properties that doesn't conflict with existing keys."""
+    key = ADDITIONAL_PROPERTY_KEY_BASE
+    counter = 0
+    while key in existing_keys:
+        counter += 1
+        key = f"{ADDITIONAL_PROPERTY_KEY_BASE}{counter}"
+    return key
 
 
 @dataclass
@@ -382,7 +393,8 @@ class CoverageContext:
             schema = dict(schema)
             schema[BUNDLE_STORAGE_KEY] = self.root_schema[BUNDLE_STORAGE_KEY]
 
-        return self.generate_from(from_schema(schema, custom_formats=self.custom_formats))
+        # Deep clone to prevent hypothesis_jsonschema from mutating the original schema
+        return self.generate_from(from_schema(deepclone(schema), custom_formats=self.custom_formats))
 
 
 T = TypeVar("T")
@@ -568,6 +580,8 @@ def cover_schema_iter(
                     yield from _negative_pattern_properties(ctx, template, value)
                 elif key == "items" and isinstance(value, dict):
                     yield from _negative_items(ctx, value)
+                elif key == "items" and isinstance(value, list):
+                    yield from _negative_prefix_items(ctx, value)
                 elif key == "pattern":
                     min_length = schema.get("minLength")
                     max_length = schema.get("maxLength")
@@ -743,25 +757,79 @@ def cover_schema_iter(
                             )
                     except (InvalidArgument, Unsatisfiable):
                         pass
-                elif (
-                    key == "additionalProperties"
-                    and not value
-                    and "pattern" not in schema
-                    and schema.get("type") in ["object", None]
-                ):
-                    if not ctx.allow_extra_parameters and ctx.location in (
-                        ParameterLocation.QUERY,
-                        ParameterLocation.HEADER,
-                        ParameterLocation.COOKIE,
-                    ):
+                elif key == "additionalProperties" and schema.get("type") in ["object", None]:
+                    if not value and "pattern" not in schema:
+                        # additionalProperties: false - add unexpected property
+                        if not ctx.allow_extra_parameters and ctx.location in (
+                            ParameterLocation.QUERY,
+                            ParameterLocation.HEADER,
+                            ParameterLocation.COOKIE,
+                        ):
+                            continue
+                        template = template or ctx.generate_from_schema(_get_template_schema(schema, "object"))
+                        yield NegativeValue(
+                            {**template, UNKNOWN_PROPERTY_KEY: UNKNOWN_PROPERTY_VALUE},
+                            scenario=CoverageScenario.OBJECT_UNEXPECTED_PROPERTIES,
+                            description="Object with unexpected properties",
+                            location=ctx.current_path,
+                        )
+                    elif isinstance(value, dict):
+                        # additionalProperties with schema - generate invalid values for the schema
+                        template = template or ctx.generate_from_schema(_get_template_schema(schema, "object"))
+                        existing_keys = set(schema.get("properties", {}).keys()) | set(template.keys())
+                        additional_key = _generate_additional_property_key(existing_keys)
+                        nctx = ctx.with_negative()
+                        with nctx.at(additional_key):
+                            for invalid in cover_schema_iter(nctx, value, seen):
+                                yield NegativeValue(
+                                    {**template, additional_key: invalid.value},
+                                    scenario=invalid.scenario,
+                                    description=f"Object with invalid additional property: {invalid.description}",
+                                    location=nctx.current_path,
+                                )
+                elif key == "maxProperties" and isinstance(value, int) and value >= 0:
+                    additional_properties = schema.get("additionalProperties", True)
+                    # Skip if additionalProperties is false - can't add more properties cleanly
+                    if additional_properties is False:
                         continue
                     template = template or ctx.generate_from_schema(_get_template_schema(schema, "object"))
-                    yield NegativeValue(
-                        {**template, UNKNOWN_PROPERTY_KEY: UNKNOWN_PROPERTY_VALUE},
-                        scenario=CoverageScenario.OBJECT_UNEXPECTED_PROPERTIES,
-                        description="Object with unexpected properties",
-                        location=ctx.current_path,
-                    )
+                    obj_value = dict(template)
+                    existing_keys = set(obj_value.keys())
+                    needed = value + 1 - len(existing_keys)
+                    if needed > 0:
+                        for _ in range(needed):
+                            new_key = _generate_additional_property_key(existing_keys)
+                            existing_keys.add(new_key)
+                            # Generate value based on additionalProperties schema, or use a default
+                            if isinstance(additional_properties, dict):
+                                obj_value[new_key] = ctx.generate_from_schema(additional_properties)
+                            else:
+                                obj_value[new_key] = UNKNOWN_PROPERTY_VALUE
+                    if len(obj_value) > value and seen.insert(obj_value):
+                        yield NegativeValue(
+                            obj_value,
+                            scenario=CoverageScenario.OBJECT_ABOVE_MAX_PROPERTIES,
+                            description="Object with more properties than allowed by maxProperties",
+                            location=ctx.current_path,
+                        )
+                elif key == "minProperties" and isinstance(value, int) and value > 0:
+                    try:
+                        required = schema.get("required", [])
+                        if value == 1 and not required:
+                            # Only use empty object if no required properties
+                            obj_value = {}
+                        else:
+                            new_schema = {**schema, "minProperties": value - 1, "maxProperties": value - 1}
+                            obj_value = ctx.generate_from_schema(new_schema)
+                        if seen.insert(obj_value):
+                            yield NegativeValue(
+                                obj_value,
+                                scenario=CoverageScenario.OBJECT_BELOW_MIN_PROPERTIES,
+                                description="Object with fewer properties than allowed by minProperties",
+                                location=ctx.current_path,
+                            )
+                    except (InvalidArgument, Unsatisfiable):
+                        pass
                 elif key == "allOf":
                     nctx = ctx.with_negative()
                     if len(value) == 1:
@@ -773,7 +841,9 @@ def cover_schema_iter(
                             yield from cover_schema_iter(nctx, canonical, seen)
                 elif key == "anyOf":
                     nctx = ctx.with_negative()
-                    validators = [jsonschema.validators.validator_for(sub_schema)(sub_schema) for sub_schema in value]
+                    resolver = ctx.resolver
+                    # Use Draft7 for validation since schemas are converted to Draft7 format (prefixItems → items)
+                    validators = [jsonschema.Draft7Validator(sub_schema, resolver=resolver) for sub_schema in value]
                     for idx, sub_schema in enumerate(value):
                         with nctx.at(idx):
                             for value in cover_schema_iter(nctx, sub_schema, seen):
@@ -783,7 +853,9 @@ def cover_schema_iter(
                                 yield value
                 elif key == "oneOf":
                     nctx = ctx.with_negative()
-                    validators = [jsonschema.validators.validator_for(sub_schema)(sub_schema) for sub_schema in value]
+                    resolver = ctx.resolver
+                    # Use Draft7 for validation since schemas are converted to Draft7 format (prefixItems → items)
+                    validators = [jsonschema.Draft7Validator(sub_schema, resolver=resolver) for sub_schema in value]
                     for idx, sub_schema in enumerate(value):
                         with nctx.at(idx):
                             for value in cover_schema_iter(nctx, sub_schema, seen):
@@ -1228,6 +1300,18 @@ def _positive_object(
                     description=f"Object with valid '{name}' value: {new.description}",
                 )
         seen.clear()
+    # Handle additionalProperties with schema
+    additional_properties = schema.get("additionalProperties")
+    if isinstance(additional_properties, dict):
+        existing_keys = set(properties.keys()) | set(template.keys())
+        additional_key = _generate_additional_property_key(existing_keys)
+        for new in cover_schema_iter(ctx, additional_properties):
+            if seen.insert(new.value):
+                yield PositiveValue(
+                    {**template, additional_key: new.value},
+                    scenario=CoverageScenario.OBJECT_ADDITIONAL_PROPERTY,
+                    description=f"Object with additional property: {new.description}",
+                )
 
 
 def select_combinations(optional: list[str]) -> Iterator[tuple[str, ...]]:
@@ -1302,6 +1386,35 @@ def _negative_items(ctx: CoverageContext, schema: JsonSchema) -> Generator[Gener
                 description=f"Array with invalid items: {value.description}",
                 location=nctx.current_path,
             )
+
+
+def _negative_prefix_items(
+    ctx: CoverageContext, item_schemas: list[JsonSchema]
+) -> Generator[GeneratedValue, None, None]:
+    """Arrays with invalid items at specific positions (tuple validation)."""
+    if not item_schemas:
+        return
+    # Generate valid values for each position
+    pctx = ctx.with_positive()
+    valid_items = []
+    for item_schema in item_schemas:
+        try:
+            valid_items.append(pctx.generate_from_schema(item_schema))
+        except (InvalidArgument, Unsatisfiable):
+            return
+    # For each position, generate negative values and yield arrays with one invalid item
+    nctx = ctx.with_negative()
+    for idx, item_schema in enumerate(item_schemas):
+        for neg_value in cover_schema_iter(nctx, item_schema):
+            items = valid_items.copy()
+            items[idx] = neg_value.value
+            if ctx.leads_to_negative_test_case(items):
+                yield NegativeValue(
+                    items,
+                    scenario=neg_value.scenario,
+                    description=f"Array with invalid item at index {idx}: {neg_value.description}",
+                    location=nctx.current_path,
+                )
 
 
 def _not_matching_pattern(value: str, pattern: re.Pattern) -> bool:
@@ -1459,8 +1572,16 @@ def _negative_type(
         types = [ty]
     else:
         types = ty
-    # Binary formats accept any bytes - type mutations are ineffective
-    if "string" in types and ctx.location == ParameterLocation.BODY and schema.get("format") in ("binary", "byte"):
+    # Root-level binary/byte format with non-JSON content types - type mutations don't produce meaningful wire violations
+    # Path is ['type'] at root level, vs ['properties', 'fieldname', 'type'] for nested properties
+    if (
+        "string" in types
+        and ctx.location == ParameterLocation.BODY
+        and schema.get("format") in ("binary", "byte")
+        and ctx.path == ["type"]
+        and ctx.media_type is not None
+        and ctx.media_type[1] not in ("json",)
+    ):
         return
     # Form-urlencoded body-level type mutations serialize to empty body
     if (

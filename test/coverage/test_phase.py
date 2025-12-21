@@ -225,6 +225,54 @@ def run_negative_test(operation, test, **kwargs):
     return run_test(operation, test, [GenerationMode.NEGATIVE], **kwargs)
 
 
+def collect_coverage_cases(ctx, body_schema, positive=False):
+    """Build schema, run test, and return coverage phase cases.
+
+    Always validates that:
+    - Positive cases produce bodies that pass JSON schema validation
+    - Negative cases produce bodies that fail JSON schema validation
+    """
+    schema = build_schema(
+        ctx,
+        request_body={
+            "required": True,
+            "content": {"application/json": {"schema": body_schema}},
+        },
+    )
+    loaded = schemathesis.openapi.from_dict(schema)
+    operation = loaded["/foo"]["post"]
+
+    validator = jsonschema.Draft202012Validator(body_schema)
+    cases = []
+
+    def collect(case):
+        if case.meta.phase.name == TestPhase.COVERAGE:
+            is_valid = validator.is_valid(case.body)
+            if positive and not is_valid:
+                errors = list(validator.iter_errors(case.body))
+                pytest.fail(
+                    f"Positive case produced invalid body.\n"
+                    f"Body: {case.body}\n"
+                    f"Schema: {body_schema}\n"
+                    f"Errors: {[e.message for e in errors]}"
+                )
+            if not positive and is_valid:
+                pytest.fail(
+                    f"Negative case produced valid body (should be invalid).\n"
+                    f"Body: {case.body}\n"
+                    f"Schema: {body_schema}\n"
+                    f"Scenario: {case.meta.phase.data.scenario}"
+                )
+            cases.append(case)
+
+    if positive:
+        run_positive_test(operation, collect)
+    else:
+        run_negative_test(operation, collect)
+
+    return cases
+
+
 @pytest.mark.parametrize(
     ("methods", "expected"),
     [
@@ -2688,4 +2736,283 @@ def test_binary_format_should_not_generate_empty_string_as_invalid(ctx, app_runn
             "--phases=coverage",
         )
         == snapshot_cli
+    )
+
+
+def test_negative_type_violation_for_const_property(ctx):
+    schema = ctx.openapi.build_schema(
+        {
+            "/test": {
+                "post": {
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "actions": {
+                                            "type": "array",
+                                            "items": {
+                                                "anyOf": [
+                                                    {"$ref": "#/components/schemas/DoNothing"},
+                                                    {"$ref": "#/components/schemas/CallWebhook"},
+                                                ]
+                                            },
+                                        }
+                                    },
+                                    "required": ["actions"],
+                                }
+                            }
+                        },
+                    },
+                    "responses": {"200": {"description": "OK"}},
+                }
+            }
+        },
+        components={
+            "schemas": {
+                "DoNothing": {
+                    "type": "object",
+                    "properties": {
+                        "type": {"const": "do-nothing", "type": "string"},
+                    },
+                },
+                "CallWebhook": {
+                    "type": "object",
+                    "properties": {
+                        "block_document_id": {"format": "uuid", "type": "string"},
+                        "type": {"const": "call-webhook", "type": "string"},
+                    },
+                    "required": ["block_document_id"],
+                },
+            }
+        },
+    )
+    loaded = schemathesis.openapi.from_dict(schema)
+    operation = loaded["/test"]["POST"]
+
+    cases = []
+
+    def collect(case):
+        if case.meta.phase.name == TestPhase.COVERAGE:
+            cases.append(case)
+
+    run_negative_test(operation, collect)
+
+    # Should generate type violations (non-string) for the `type` property
+    type_violations = [
+        c
+        for c in cases
+        if isinstance(c.body, dict)
+        and isinstance(c.body.get("actions"), list)
+        and len(c.body["actions"]) == 1
+        and isinstance(c.body["actions"][0], dict)
+        and "type" in c.body["actions"][0]
+        and not isinstance(c.body["actions"][0]["type"], str)
+    ]
+    assert len(type_violations) > 0, (
+        f"Should generate type violations (non-string) for type property. "
+        f"Got bodies: {[c.body for c in cases if isinstance(c.body, dict) and c.body.get('actions')]}"
+    )
+
+
+def test_additional_properties_with_schema_positive(ctx):
+    schema = build_schema(
+        ctx,
+        request_body={
+            "required": True,
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "type": "object",
+                        "additionalProperties": {"type": "string"},
+                    }
+                }
+            },
+        },
+    )
+    loaded = schemathesis.openapi.from_dict(schema)
+    operation = loaded["/foo"]["post"]
+
+    cases = []
+
+    def collect(case):
+        if case.meta.phase.name == TestPhase.COVERAGE:
+            cases.append(case)
+
+    run_positive_test(operation, collect)
+
+    # Should generate objects with string values
+    with_string_values = [
+        c for c in cases if isinstance(c.body, dict) and any(isinstance(v, str) for v in c.body.values())
+    ]
+    assert len(with_string_values) > 0, (
+        f"Should generate objects with string values. Got bodies: {[c.body for c in cases]}"
+    )
+
+
+def test_additional_properties_with_schema_negative(ctx):
+    schema = build_schema(
+        ctx,
+        request_body={
+            "required": True,
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "type": "object",
+                        "additionalProperties": {"type": "string"},
+                    }
+                }
+            },
+        },
+    )
+    loaded = schemathesis.openapi.from_dict(schema)
+    operation = loaded["/foo"]["post"]
+
+    cases = []
+
+    def collect(case):
+        if case.meta.phase.name == TestPhase.COVERAGE:
+            cases.append(case)
+
+    run_negative_test(operation, collect)
+
+    # Should generate objects with non-string values (type violations)
+    with_invalid_values = [
+        c for c in cases if isinstance(c.body, dict) and any(not isinstance(v, str) for v in c.body.values())
+    ]
+    assert len(with_invalid_values) > 0, (
+        f"Should generate objects with non-string values. Got bodies: {[c.body for c in cases]}"
+    )
+
+
+def test_additional_properties_anyof_positive(ctx):
+    schema = build_schema(
+        ctx,
+        request_body={
+            "required": True,
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "anyOf": [
+                                {"type": "string"},
+                                {"type": "array", "items": {"type": "string"}},
+                            ]
+                        },
+                    }
+                }
+            },
+        },
+    )
+    loaded = schemathesis.openapi.from_dict(schema)
+    operation = loaded["/foo"]["post"]
+
+    cases = []
+
+    def collect(case):
+        if case.meta.phase.name == TestPhase.COVERAGE:
+            cases.append(case)
+
+    run_positive_test(operation, collect)
+
+    # Should generate both string values and array values
+    with_string = [c for c in cases if isinstance(c.body, dict) and any(isinstance(v, str) for v in c.body.values())]
+    with_array = [c for c in cases if isinstance(c.body, dict) and any(isinstance(v, list) for v in c.body.values())]
+    assert len(with_string) > 0, f"Should generate objects with string values. Got bodies: {[c.body for c in cases]}"
+    assert len(with_array) > 0, f"Should generate objects with array values. Got bodies: {[c.body for c in cases]}"
+
+
+def test_max_properties_negative(ctx):
+    cases = collect_coverage_cases(
+        ctx, {"type": "object", "maxProperties": 2, "additionalProperties": {"type": "string"}}
+    )
+    exceeding = [c for c in cases if isinstance(c.body, dict) and len(c.body) > 2]
+    assert len(exceeding) > 0, f"Should generate objects exceeding maxProperties. Got bodies: {[c.body for c in cases]}"
+
+
+def test_min_properties_negative(ctx):
+    cases = collect_coverage_cases(
+        ctx, {"type": "object", "minProperties": 2, "additionalProperties": {"type": "string"}}
+    )
+    below = [c for c in cases if isinstance(c.body, dict) and len(c.body) < 2]
+    assert len(below) > 0, f"Should generate objects below minProperties. Got bodies: {[c.body for c in cases]}"
+
+
+def test_max_properties_with_additional_properties_false(ctx):
+    cases = collect_coverage_cases(
+        ctx,
+        {
+            "type": "object",
+            "maxProperties": 2,
+            "additionalProperties": False,
+            "properties": {"a": {"type": "string"}, "b": {"type": "string"}},
+        },
+    )
+    exceeding = [c for c in cases if c.meta.phase.data.scenario == CoverageScenario.OBJECT_ABOVE_MAX_PROPERTIES]
+    assert len(exceeding) == 0, (
+        f"Should NOT generate OBJECT_ABOVE_MAX_PROPERTIES when additionalProperties: false. Got: {exceeding}"
+    )
+
+
+def test_max_properties_zero(ctx):
+    cases = collect_coverage_cases(
+        ctx, {"type": "object", "maxProperties": 0, "additionalProperties": {"type": "string"}}
+    )
+    exceeding = [c for c in cases if isinstance(c.body, dict) and len(c.body) > 0]
+    assert len(exceeding) > 0, (
+        f"Should generate objects with at least 1 property. Got bodies: {[c.body for c in cases]}"
+    )
+
+
+def test_min_properties_with_required(ctx):
+    cases = collect_coverage_cases(
+        ctx,
+        {
+            "type": "object",
+            "minProperties": 2,
+            "required": ["a", "b"],
+            "properties": {"a": {"type": "string"}, "b": {"type": "string"}},
+        },
+    )
+    below = [c for c in cases if c.meta.phase.data.scenario == CoverageScenario.OBJECT_BELOW_MIN_PROPERTIES]
+    assert len(below) == 0, (
+        f"Should NOT generate OBJECT_BELOW_MIN_PROPERTIES when required >= minProperties. Got: {below}"
+    )
+
+
+def test_max_properties_default_additional_properties(ctx):
+    cases = collect_coverage_cases(ctx, {"type": "object", "maxProperties": 1})
+    exceeding = [c for c in cases if isinstance(c.body, dict) and len(c.body) > 1]
+    assert len(exceeding) > 0, (
+        f"Should generate objects exceeding maxProperties with default additionalProperties. Got bodies: {[c.body for c in cases]}"
+    )
+
+
+def test_min_properties_one(ctx):
+    cases = collect_coverage_cases(ctx, {"type": "object", "minProperties": 1})
+    empty = [c for c in cases if c.meta.phase.data.scenario == CoverageScenario.OBJECT_BELOW_MIN_PROPERTIES]
+    assert len(empty) > 0, (
+        f"Should generate OBJECT_BELOW_MIN_PROPERTIES for minProperties: 1. Got: {[c.body for c in cases]}"
+    )
+    assert any(c.body == {} for c in empty), (
+        f"Should generate empty object for minProperties: 1. Got: {[c.body for c in empty]}"
+    )
+
+
+def test_min_properties_fewer_than_required(ctx):
+    cases = collect_coverage_cases(
+        ctx,
+        {
+            "type": "object",
+            "minProperties": 1,
+            "required": ["a", "b", "c"],
+            "properties": {"a": {"type": "string"}, "b": {"type": "string"}, "c": {"type": "string"}},
+        },
+    )
+    below = [c for c in cases if c.meta.phase.data.scenario == CoverageScenario.OBJECT_BELOW_MIN_PROPERTIES]
+    assert len(below) == 0, (
+        f"Should NOT generate OBJECT_BELOW_MIN_PROPERTIES when required > minProperties. Got: {below}"
     )

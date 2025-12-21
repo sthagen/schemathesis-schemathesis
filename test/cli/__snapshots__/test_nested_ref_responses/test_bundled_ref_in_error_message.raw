@@ -29,18 +29,44 @@ Schemathesis dev
      ❌ 1 failed
 
 =================================== FAILURES ===================================
-_________________________________ POST /users __________________________________
+__________________________________ GET /items __________________________________
 1. Test Case ID: <PLACEHOLDER>
 
-- API accepted schema-violating request
+- Response violates schema
 
-    Invalid data should have been rejected
-    Expected: 400, 401, 403, 404, 406, 422, 428, 5xx
-    Invalid component: in body - incorrect type
+    'not an array' is not of type 'array'
+
+    Schema:
+
+        {
+            "type": "array",
+            "items": {
+                "$ref": "#/components/schemas/Item"
+            },
+            "components": {
+                "schemas": {
+                    "Item": {
+                        "properties": {
+                            "id": {
+                                "type": "integer"
+                            },
+                            "name": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "name"
+            // Output truncated...
+        }
+
+    Value:
+
+        "not an array"
 
 [200] OK:
 
-    `{"result":"ok"}`
+    `"not an array"`
 
 Reproduce with:
 
@@ -59,7 +85,7 @@ Test Phases:
   ⏭  Stateful (not applicable)
 
 Failures:
-  ❌ API accepted schema-violating request: 1
+  ❌ Response violates schema: 1
 
 Test cases:
   N generated, N found N unique failures, N skipped

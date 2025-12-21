@@ -664,3 +664,85 @@ def test_negative_custom_format_generates_invalid_values(ctx):
     test()
     # Then at least some generated values should be invalid UUID4s
     assert invalid_uuid4_found, "Negative mode should generate invalid UUID4 values for custom formats"
+
+
+@pytest.mark.hypothesis_nested
+def test_multiple_mutations_clear_description():
+    # GH-3367: When multiple mutations are applied to a schema, they can conflict
+    # (e.g., one mutation changes a property's type, another removes that property).
+    # In such cases, keeping the first mutation's description is misleading.
+    # This test verifies that when multiple mutations succeed, description is cleared.
+    schema = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "value": {"type": "integer"},
+        },
+        "required": ["name", "value"],
+    }
+    ctx = MutationContext(
+        keywords=schema,
+        non_keywords={},
+        location=ParameterLocation.HEADER,
+        media_type=None,
+        allow_extra_parameters=False,
+    )
+
+    @given(data=st.data())
+    @settings(deadline=None, max_examples=50, suppress_health_check=SUPPRESSED_HEALTH_CHECKS)
+    def test(data):
+        draw = data.draw
+        _, metadata = ctx.mutate(draw)
+        if metadata is not None:
+            assert metadata.description != "Schema mutated"
+
+    test()
+
+
+@pytest.mark.hypothesis_nested
+def test_path_parameters_never_contain_slash():
+    # When fuzzing path parameters, mutated values should never contain `/`
+    # because this would change the URL structure and potentially route to different endpoints.
+    # For example, `/api/groups/{id}` with id="foo/bar" becomes `/api/groups/foo/bar`
+    # which could match `/api/groups/{id}/{user_id}` instead.
+    #
+    # This can happen when the generated value is a dict/object that gets stringified with `/` in keys
+    schema = schemathesis.openapi.from_dict(
+        {
+            "openapi": "3.0.0",
+            "info": {"title": "Test", "version": "0.1.0"},
+            "paths": {
+                "/api/groups/{id}": {
+                    "get": {
+                        "parameters": [
+                            {
+                                "name": "id",
+                                "in": "path",
+                                "required": True,
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "type": "string",
+                                            "examples": ["bqf7a2d9gbgud9a0jgfgt1ie"],
+                                            "pattern": "^[a-zA-Z0-9\\-]+$",
+                                        },
+                                        {"enum": ["valid-id-1", "valid-id-2"]},
+                                    ]
+                                },
+                            }
+                        ],
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                },
+            },
+        }
+    )
+    operation = schema["/api/groups/{id}"]["GET"]
+
+    @given(case=operation.as_strategy(generation_mode=GenerationMode.NEGATIVE))
+    @settings(deadline=None, max_examples=250, suppress_health_check=SUPPRESSED_HEALTH_CHECKS)
+    def test(case):
+        for value in case.path_parameters.values():
+            assert "/" not in str(value)
+
+    test()

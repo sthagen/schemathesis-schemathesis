@@ -1,10 +1,98 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.6.4...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.7.6...HEAD) - TBD
+
+## [4.7.6](https://github.com/schemathesis/schemathesis/compare/v4.7.5...v4.7.6) - 2025-12-17
+
+### :wrench: Changed
+
+- Hook runtime errors are now reported as "Hook Error" instead of misleading "Schema Error".
+
+## [4.7.5](https://github.com/schemathesis/schemathesis/compare/v4.7.4...v4.7.5) - 2025-12-10
+
+### :bug: Fixed
+
+- Crash when parameter has non-string `in` value.
+- Crash during examples phase when schema contains non-string `pattern` value.
+- Examples phase generating invalid data for schemas with `anyOf`/`oneOf` containing only `required` constraints. [#3404](https://github.com/schemathesis/schemathesis/issues/3404)
+- Fuzzing phase failing with `unhashable type: 'GeneratedValue'` for `multipart/form-data` with custom encoding.
+
+## [4.7.4](https://github.com/schemathesis/schemathesis/compare/v4.7.3...v4.7.4) - 2025-12-10
+
+### :bug: Fixed
+
+- `Binary` class causing JSON serialization errors in Hypofuzz due to `dataclasses.asdict()` exposing raw bytes.
+
+## [4.7.3](https://github.com/schemathesis/schemathesis/compare/v4.7.2...v4.7.3) - 2025-12-08
+
+### :wrench: Changed
+
+- Add `409` to `positive_data_acceptance` check's default expected statuses to handle conflict responses (e.g., duplicate entries).
+
+### :bug: Fixed
+
+- Response schema validation errors displaying internal bundled refs like `#/x-bundled/schema1` instead of original refs like `#/components/schemas/Item`.
+
+## [4.7.2](https://github.com/schemathesis/schemathesis/compare/v4.7.1...v4.7.2) - 2025-12-08
+
+### :bug: Fixed
+
+- Hypothesis `database` setting from `@settings` decorator or loaded profiles being ignored with `@schema.parametrize()`.
+- `AttributeError` when using Schemathesis with HypoFuzz due to uninitialized `_override` attribute in `ProjectsConfig`.
+
+### :wrench: Changed
+
+- Bump `pytest-subtest` from <0.15.0 to <0.16.0.
+
+## [4.7.1](https://github.com/schemathesis/schemathesis/compare/v4.7.0...v4.7.1) - 2025-12-07
+
+### :bug: Fixed
+
+- Stateful testing crash on links with nested `$ref`s. [#3394](https://github.com/schemathesis/schemathesis/issues/3394)
+
+## [4.7.0](https://github.com/schemathesis/schemathesis/compare/v4.6.8...v4.7.0) - 2025-12-06
+
+### :rocket: Added
+
+- Coverage phase now generates test cases for `additionalProperties` with schema constraints.
+- Coverage phase now generates test cases for `maxProperties` and `minProperties` constraints.
+- Coverage phase now generates negative test cases for `prefixItems`.
+
+### :bug: Fixed
+
+- Coverage phase crash when `anyOf`/`oneOf` contains array schemas with tuple validation (`items` as list).
+- Missing type violations in coverage phase for properties with `format: binary` in JSON request bodies.
+- Missing curl reproduction commands for network errors with Hypothesis 6.148.7+.
+- Missing type violations in coverage phase for properties with both `const` and `type` keywords.
+- `PointerToNowhere` error when `prefixItems` contains `$ref` in Open API 3.1 schemas.
+- `auth` argument passed to `call_and_validate` not being recognized by the `ignored_auth` check. [#3386](https://github.com/schemathesis/schemathesis/issues/3386)
+
+## [4.6.8](https://github.com/schemathesis/schemathesis/compare/v4.6.7...v4.6.8) - 2025-12-04
+
+### :bug: Fixed
+
+- False positive in `negative_data_rejection` check when numeric strings are generated for integer/number path parameters.
+
+## [4.6.7](https://github.com/schemathesis/schemathesis/compare/v4.6.6...v4.6.7) - 2025-12-04
+
+### :wrench: Changed
+
+- Use Python 3.14 in Docker images.
+- Unsupported regex patterns are now removed with a warning instead of causing schema errors.
+
+## [4.6.6](https://github.com/schemathesis/schemathesis/compare/v4.6.5...v4.6.6) - 2025-12-03
+
+### :bug: Fixed
+
+- False positive in `negative_data_rejection` check when multiple mutations conflict. [#3367](https://github.com/schemathesis/schemathesis/issues/3367)
+- Path parameters containing `/` in their string representation routing requests to wrong endpoints during negative testing.
+
+## [4.6.5](https://github.com/schemathesis/schemathesis/compare/v4.6.4...v4.6.5) - 2025-12-03
 
 ### :bug: Fixed
 
 - False positive in `negative_data_rejection` check when single-element arrays serialize to scalar values for query/header/cookie parameters. [#3375](https://github.com/schemathesis/schemathesis/pull/3375)
+- Support `$ref` inside link definitions in Open API 3.1. [#3377](https://github.com/schemathesis/schemathesis/pull/3377)
 
 ## [4.6.4](https://github.com/schemathesis/schemathesis/compare/v4.6.3...v4.6.4) - 2025-11-28
 

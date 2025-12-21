@@ -50,6 +50,7 @@ class CoverageScenario(str, Enum):
     # Positive scenarios - Objects
     OBJECT_ONLY_REQUIRED = "object_only_required"
     OBJECT_REQUIRED_AND_OPTIONAL = "object_required_and_optional"
+    OBJECT_ADDITIONAL_PROPERTY = "object_additional_property"
 
     # Positive scenarios - Default test case
     DEFAULT_POSITIVE_TEST = "default_positive_test"
@@ -65,6 +66,10 @@ class CoverageScenario(str, Enum):
     # Negative scenarios - Boundary violations for arrays
     ARRAY_ABOVE_MAX_ITEMS = "array_above_max_items"
     ARRAY_BELOW_MIN_ITEMS = "array_below_min_items"
+
+    # Negative scenarios - Boundary violations for objects
+    OBJECT_ABOVE_MAX_PROPERTIES = "object_above_max_properties"
+    OBJECT_BELOW_MIN_PROPERTIES = "object_below_min_properties"
 
     # Negative scenarios - Constraint violations
     OBJECT_UNEXPECTED_PROPERTIES = "object_unexpected_properties"
@@ -98,7 +103,7 @@ class ComponentInfo:
 class FuzzingPhaseData:
     """Metadata specific to fuzzing phase."""
 
-    description: str
+    description: str | None
     parameter: str | None
     parameter_location: ParameterLocation | None
     location: str | None

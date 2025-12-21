@@ -953,28 +953,14 @@ def test(case):
     )
 
 
-@pytest.mark.parametrize(
-    ("phases", "expected"),
-    [
-        (
-            "Phase.explicit",
-            "Failed to generate test cases from examples for this API operation because of "
-            r"unsupported regular expression `^[\w\s\-\/\pL,.#;:()']+$`",
-        ),
-        (
-            "Phase.explicit, Phase.generate",
-            "Failed to generate test cases for this API operation because of "
-            r"unsupported regular expression `^[\w\s\-\/\pL,.#;:()']+$`",
-        ),
-    ],
-)
-def test_invalid_regex_example(testdir, openapi3_base_url, phases, expected):
+def test_unsupported_regex_pattern_removed(testdir, openapi3_base_url):
+    # When a schema contains an unsupported regex pattern, it is removed and tests can proceed
     testdir.make_test(
         f"""
 schema.config.update(base_url="{openapi3_base_url}")
 
 @schema.include(path_regex="success").parametrize()
-@settings(phases=[{phases}])
+@settings(phases=[Phase.explicit, Phase.generate])
 def test(case):
     pass
 """,
@@ -1010,8 +996,8 @@ def test(case):
         generation_modes=[GenerationMode.POSITIVE],
     )
     result = testdir.runpytest()
-    result.assert_outcomes(failed=1)
-    assert expected in result.stdout.str()
+    # Test passes because the unsupported pattern is removed during schema conversion
+    result.assert_outcomes(passed=1)
 
 
 @pytest.mark.parametrize(
@@ -1456,45 +1442,6 @@ def test(case):
     )
     result = testdir.runpytest()
     result.assert_outcomes(passed=1)
-
-
-def test_identical_exceptions_are_deduplicated(testdir):
-    # When a malformed schema causes identical exceptions across multiple test cases
-    testdir.makefile(
-        ".yaml",
-        schema="""
-openapi: 3.0.0
-info:
-  title: Test
-  version: 1.0.0
-paths:
-  /test/{id}}:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: integer
-    get:
-      responses:
-        '200':
-          description: OK
-""",
-    )
-    testdir.make_test(
-        """
-schema = schemathesis.openapi.from_path("schema.yaml")
-
-@schema.parametrize()
-def test(case):
-    case.call_and_validate()
-"""
-    )
-    result = testdir.runpytest("-v")
-    # Then the test should fail
-    result.assert_outcomes(failed=1)
-    # And identical exceptions should be deduplicated in output
-    result.stdout.re_match_lines([r".*Hypothesis found 1 distinct failures.*"])
 
 
 def test_distinct_exceptions_not_deduplicated(testdir):

@@ -124,6 +124,57 @@ def test_negative_data_rejection_displays_all_cases(app_runner, cli, snapshot_cl
     )
 
 
+@pytest.mark.snapshot(replace_reproduce_with=True)
+def test_negative_data_rejection_path_parameter_type_mutation(ctx, app_runner, cli, snapshot_cli):
+    # String value for an integer path parameter serializes to the same URL as the integer.
+    # E.g., string "7" becomes /api/run/7 - indistinguishable from integer 7.
+    raw_schema = ctx.openapi.build_schema(
+        {
+            "/api/run/{id}": {
+                "post": {
+                    "parameters": [
+                        {
+                            "name": "id",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "integer"},
+                        }
+                    ],
+                    "responses": {"200": {"description": "Success"}},
+                }
+            }
+        }
+    )
+
+    app = Flask(__name__)
+
+    @app.route("/openapi.json")
+    def schema():
+        return jsonify(raw_schema)
+
+    @app.route("/api/run/<path:id>", methods=["POST"])
+    def run_endpoint(id):
+        # Server accepts numeric-looking paths (including negative numbers like -1, -42)
+        try:
+            int(id)
+            return "", 200
+        except ValueError:
+            return "", 400
+
+    port = app_runner.run_flask_app(app)
+
+    assert (
+        cli.run(
+            f"http://127.0.0.1:{port}/openapi.json",
+            "--checks=negative_data_rejection",
+            "--mode=negative",
+            "--phases=fuzzing",
+            "--max-examples=200",
+        )
+        == snapshot_cli
+    )
+
+
 def test_negative_data_rejection_array_of_strings_boolean_collision(ctx, app_runner, cli, snapshot_cli):
     # See GH-2913
     raw_schema = ctx.openapi.build_schema(
@@ -811,8 +862,8 @@ def test_negative_data_rejection_form_data_empty_string_false_positive(ctx, app_
     )
 
 
-@pytest.mark.snapshot(replace_reproduce_with=True)
-def test_negative_data_rejection_fuzzing_phase_metadata(ctx, app_runner, cli, snapshot_cli):
+def test_negative_data_rejection_fuzzing_phase_metadata(ctx, app_runner, cli):
+    # Use a simple schema with single property to avoid multiple mutation conflicts
     raw_schema = ctx.openapi.build_schema(
         {
             "/users": {
@@ -823,24 +874,8 @@ def test_negative_data_rejection_fuzzing_phase_metadata(ctx, app_runner, cli, sn
                             "application/json": {
                                 "schema": {
                                     "type": "object",
-                                    "properties": {
-                                        "age": {
-                                            "type": "integer",
-                                            "minimum": 0,
-                                            "maximum": 120,
-                                        },
-                                        "name": {
-                                            "type": "string",
-                                            "minLength": 1,
-                                            "maxLength": 100,
-                                        },
-                                        "tags": {
-                                            "type": "array",
-                                            "items": {"type": "string", "minLength": 2},
-                                            "minItems": 1,
-                                        },
-                                    },
-                                    "required": ["age", "name"],
+                                    "properties": {"name": {"type": "string"}},
+                                    "required": ["name"],
                                 }
                             }
                         },
@@ -859,21 +894,21 @@ def test_negative_data_rejection_fuzzing_phase_metadata(ctx, app_runner, cli, sn
 
     @app.route("/users", methods=["POST"])
     def create_user():
-        # Always return 200 to trigger negative_data_rejection check failure
         return jsonify({"result": "ok"}), 200
 
     port = app_runner.run_flask_app(app)
 
-    assert (
-        cli.run(
-            f"http://127.0.0.1:{port}/openapi.json",
-            "--checks=negative_data_rejection",
-            "--mode=negative",
-            "--max-examples=5",
-            "--continue-on-failure",
-        )
-        == snapshot_cli
+    result = cli.run_and_assert(
+        f"http://127.0.0.1:{port}/openapi.json",
+        "--checks=negative_data_rejection",
+        "--mode=negative",
+        "--phases=fuzzing",
+        "--max-examples=25",
+        "--continue-on-failure",
+        exit_code=ExitCode.TESTS_FAILED,
     )
+    assert "API accepted schema-violating request" in result.stdout
+    assert "Invalid component: in body" in result.stdout
 
 
 @pytest.mark.parametrize(
