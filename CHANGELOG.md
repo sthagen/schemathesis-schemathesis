@@ -1,6 +1,26 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.7.6...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.7.8...HEAD) - TBD
+
+### :bug: Fixed
+
+- Unhandled `PermissionError` when loading config file.
+
+## [4.7.8](https://github.com/schemathesis/schemathesis/compare/v4.7.7...v4.7.8) - 2025-12-28
+
+### :wrench: Changed
+
+- Improve dependency inference.
+
+### :bug: Fixed
+
+- Resources not captured when server returns different 2xx status code than documented.
+
+## [4.7.7](https://github.com/schemathesis/schemathesis/compare/v4.7.6...v4.7.7) - 2025-12-22
+
+### :memo: Documentation
+
+- Fix code snippets config.
 
 ## [4.7.6](https://github.com/schemathesis/schemathesis/compare/v4.7.5...v4.7.6) - 2025-12-17
 
