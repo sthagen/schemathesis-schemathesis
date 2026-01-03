@@ -2,6 +2,21 @@
 
 ## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.7.9...HEAD) - TBD
 
+### :rocket: Added
+
+- Automatic success rate targeting to guide test generation toward valid API inputs.
+- Translate PCRE Unicode property escapes (`\p{L}`, `\p{N}`) to Python regex equivalents.
+- Propagate shared path parameters in inferred links for nested resources.
+
+### :wrench: Changed
+
+- Reduce negative test generation for parameters with captured response values.
+
+### :bug: Fixed
+
+- Resource pool not recording IDs from successful responses when other test cases in the same scenario failed.
+- Incorrect operation ordering within dependency layers.
+
 ## [4.7.9](https://github.com/schemathesis/schemathesis/compare/v4.7.8...v4.7.9) - 2025-12-30
 
 ### :rocket: Added
