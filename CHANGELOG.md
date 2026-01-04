@@ -7,9 +7,13 @@
 - Automatic success rate targeting to guide test generation toward valid API inputs.
 - Translate PCRE Unicode property escapes (`\p{L}`, `\p{N}`) to Python regex equivalents.
 - Propagate shared path parameters in inferred links for nested resources.
+- Fuzzing phase now uses valid resource relationships for nested paths.
 
 ### :wrench: Changed
 
+- Use `st.sampled_from` for captured variants instead of schema augmentation.
+- Context-aware resource pool to preserve diversity across parent resources.
+- Bias test generation toward captured IDs over random values.
 - Reduce negative test generation for parameters with captured response values.
 
 ### :bug: Fixed

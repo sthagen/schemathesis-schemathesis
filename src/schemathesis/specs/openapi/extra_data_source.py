@@ -19,9 +19,6 @@ if TYPE_CHECKING:
 RequirementKey = tuple[str, ParameterLocation, str]
 DedupKey: TypeAlias = tuple[type, str | int | float | bool | None]
 
-# Marker indicating that the schema has been augmented with captured response values
-AUGMENTED_MARKER = "x-schemathesis-augmented"
-
 
 @dataclass(slots=True, frozen=True)
 class ParameterRequirement:
@@ -50,45 +47,80 @@ class OpenApiExtraDataSource(ExtraDataSource):
     repository: ResourceRepository
     requirements: dict[RequirementKey, ParameterRequirement]
 
-    def augment(
+    def get_captured_variants(
         self,
         *,
         operation: APIOperation,
         location: ParameterLocation,
         schema: JsonSchema,
-    ) -> JsonSchema:
-        # Augment parameter schemas with enum values from captured responses.
-        # For each property with a requirement mapping, wrap its schema in anyOf
-        # with an enum containing real values from successful API calls.
+    ) -> list[dict[str, Any]] | None:
+        """Get captured variants for hybrid strategy.
+
+        Returns list of parameter value sets from captured responses.
+        For single requirements, returns single-property dicts.
+        For multiple requirements, returns complete value sets preserving relationships.
+        """
         if not isinstance(schema, dict):
-            return schema
+            return None
 
         properties = schema.get("properties")
         if not isinstance(properties, dict):
-            return schema
+            return None
 
-        augmented: dict[str, Any] | None = None
-        new_properties: dict[str, Any] | None = None
-
-        for name, property_schema in properties.items():
-            if not isinstance(property_schema, dict):
-                continue
+        # Collect requirements for this schema
+        property_requirements: dict[str, ParameterRequirement] = {}
+        for name in properties:
             requirement = self.requirements.get((operation.label, location, name))
-            if requirement is None:
-                continue
-            enum_values = self._collect_values(requirement)
-            if not enum_values:
-                continue
-            # Copy-on-write: only mutate when we have values to add
-            if augmented is None:
-                augmented = dict(schema)
-                new_properties = dict(properties)
-                augmented["properties"] = new_properties
-                augmented[AUGMENTED_MARKER] = True
-            assert new_properties is not None
-            new_properties[name] = self._wrap_with_enum(property_schema, enum_values)
+            if requirement is not None:
+                property_requirements[name] = requirement
 
-        return augmented or schema
+        if not property_requirements:
+            return None
+
+        # Single requirement: return simple single-property variants
+        if len(property_requirements) == 1:
+            name, requirement = next(iter(property_requirements.items()))
+            values = self._collect_values(requirement)
+            if not values:
+                return None
+            return [{name: value} for value in values]
+
+        # Multiple requirements: return complete object variants preserving relationships
+        return self._collect_object_variants(property_requirements) or None
+
+    def _collect_object_variants(self, requirements: dict[str, ParameterRequirement]) -> list[dict[str, Any]]:
+        """Collect complete value sets that preserve relationships between properties."""
+        # Get all resource types involved
+        resource_names = {req.resource_name for req in requirements.values()}
+
+        variants: list[dict[str, Any]] = []
+        seen: set[str] = set()
+
+        # For each resource instance, try to build a complete variant
+        for resource_name in resource_names:
+            for instance in self.repository.iter_instances(resource_name):
+                variant: dict[str, Any] = {}
+
+                for param_name, req in requirements.items():
+                    if req.resource_name == resource_name:
+                        # Value from the resource data (e.g., Pet.id from response)
+                        value = instance.data.get(req.resource_field)
+                    else:
+                        # Value from context (e.g., ownerId from request path)
+                        value = instance.context.get(param_name)
+
+                    if value is not None:
+                        variant[param_name] = value
+
+                # Only include if we filled ALL requirements
+                if len(variant) == len(requirements):
+                    # Deduplicate by serializing the variant
+                    key = json.dumps(variant, sort_keys=True, default=str)
+                    if key not in seen:
+                        seen.add(key)
+                        variants.append(variant)
+
+        return variants
 
     def _collect_values(self, requirement: ParameterRequirement) -> list[Any]:
         """Collect unique values from captured resource instances."""
@@ -118,13 +150,6 @@ class OpenApiExtraDataSource(ExtraDataSource):
 
         return values
 
-    def _wrap_with_enum(self, schema: dict[str, Any], values: list[Any]) -> dict[str, Any]:
-        variants = {"enum": values}
-        any_of = schema.get("anyOf")
-        if isinstance(any_of, list):
-            return {**schema, "anyOf": [*any_of, variants]}
-        return {"anyOf": [schema, variants]}
-
     def should_record(self, *, operation: str) -> bool:
         """Check if responses should be recorded for this operation."""
         return bool(self.repository.descriptors_for_operation(operation))
@@ -153,4 +178,5 @@ class OpenApiExtraDataSource(ExtraDataSource):
             operation=operation.label,
             status_code=response.status_code,
             payload=payload,
+            context=case.path_parameters or {},
         )
