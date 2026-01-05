@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from itertools import chain
+from random import Random
 from typing import TYPE_CHECKING, Any, cast
 
 from schemathesis.config import GenerationConfig
@@ -28,6 +30,7 @@ if TYPE_CHECKING:
     from hypothesis import strategies as st
 
     from schemathesis.core.compat import RefResolver
+    from schemathesis.specs.openapi.extra_data_source import VariantUsageTracker
 
 
 MISSING_SCHEMA_OR_CONTENT_MESSAGE = (
@@ -48,24 +51,99 @@ CAPTURED_VALUES_PROBABILITY = 0.8
 # We want to mostly use captured values to test deeper application logic.
 NEGATIVE_STRATEGY_PROBABILITY = 0.03
 
+# Probability of biasing path parameter integers toward positive values.
+# Most REST APIs use positive integers for resource IDs, so this improves
+# the chance of hitting existing resources while still allowing edge cases.
+PATH_INTEGER_POSITIVE_BIAS = 0.8
+
+
+def _variant_key(variant: dict[str, Any]) -> str:
+    """Create a stable string key for a variant dict."""
+    return json.dumps(variant, sort_keys=True, default=str)
+
 
 def build_hybrid_strategy(
     original_strategy: st.SearchStrategy,
     captured_variants: list[dict[str, Any]],
+    usage_tracker: "VariantUsageTracker",
 ) -> st.SearchStrategy:
-    """Combine original strategy with captured variants using weighted sampling."""
+    """Combine original strategy with captured variants using weighted sampling.
+
+    Weights selection to prefer variants that haven't been drawn recently,
+    reducing wasted test budget from repeated operations on the same resources.
+    """
     from hypothesis import strategies as st
 
-    captured_strategy = st.sampled_from(captured_variants)
+    # Pre-compute keys for all variants
+    variant_keys = [_variant_key(v) for v in captured_variants]
+    n_variants = len(captured_variants)
 
     @st.composite  # type: ignore[untyped-decorator]
     def hybrid(draw: st.DrawFn) -> dict[str, Any]:
-        random = draw(st.randoms(use_true_random=True))
-        if random.random() < CAPTURED_VALUES_PROBABILITY:
-            return draw(captured_strategy)
-        return draw(original_strategy)
+        random = draw(st.randoms())
+
+        # Decide: use captured variant or generate fresh?
+        if random.random() >= CAPTURED_VALUES_PROBABILITY:
+            return draw(original_strategy)
+
+        # Single variant: no selection needed
+        if n_variants == 1:
+            usage_tracker.record_draw(variant_keys[0])
+            return captured_variants[0]
+
+        # Shuffle indices before weighted selection to avoid Hypothesis's bias
+        # toward early indices when using cumulative probability selection.
+        idx = usage_tracker.weighted_select(variant_keys, random)
+
+        # Record this draw for future weighting
+        usage_tracker.record_draw(variant_keys[idx])
+        return captured_variants[idx]
 
     return hybrid()
+
+
+def _schema_has_integer_properties(schema: JsonSchemaObject) -> bool:
+    """Check if the schema has any integer-type properties."""
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        return False
+    for prop_schema in properties.values():
+        if isinstance(prop_schema, dict) and prop_schema.get("type") == "integer":
+            return True
+    return False
+
+
+def _bias_path_integers_to_positive(params: dict[str, Any], random: Random) -> dict[str, Any]:
+    """Bias integer path parameters toward positive values.
+
+    Most REST APIs use positive integers for resource IDs (1, 2, 3, ...),
+    so biasing toward positive values increases the chance of hitting
+    existing resources while still occasionally testing edge cases like 0
+    and negative numbers.
+    """
+    result = {}
+    for key, value in params.items():
+        if isinstance(value, int) and value <= 0 and random.random() < PATH_INTEGER_POSITIVE_BIAS:
+            # Convert to positive: 0 -> 1, negative -> abs(value) or 1
+            result[key] = max(1, abs(value))
+        else:
+            result[key] = value
+    return result
+
+
+def build_positive_biased_path_strategy(strategy: st.SearchStrategy) -> st.SearchStrategy:
+    """Wrap a path parameter strategy to bias integers toward positive values."""
+    from hypothesis import strategies as st
+
+    @st.composite  # type: ignore[untyped-decorator]
+    def biased(draw: st.DrawFn) -> dict[str, Any] | None:
+        params = draw(strategy)
+        if params is None:
+            return params
+        random = draw(st.randoms())
+        return _bias_path_integers_to_positive(params, random)
+
+    return biased()
 
 
 @dataclass
@@ -321,6 +399,7 @@ class OpenApiBody(OpenApiComponent):
 
         # Check for captured variants for hybrid approach
         captured_variants: list[dict[str, Any]] | None = None
+        usage_tracker = None
         if extra_data_source is not None:
             from schemathesis.specs.openapi.extra_data_source import OpenApiExtraDataSource
 
@@ -328,6 +407,7 @@ class OpenApiBody(OpenApiComponent):
                 captured_variants = extra_data_source.get_captured_variants(
                     operation=operation, location=ParameterLocation.BODY, schema=self.optimized_schema
                 )
+                usage_tracker = extra_data_source.usage_tracker
 
         # Build the strategy
         strategy_factory = GENERATOR_MODE_TO_STRATEGY_FACTORY[generation_mode]
@@ -343,11 +423,13 @@ class OpenApiBody(OpenApiComponent):
         )
 
         # Apply hybrid approach when captured variants are available
-        if captured_variants:
+        if captured_variants and usage_tracker is not None:
             if generation_mode.is_negative:
-                strategy = self._build_negative_aware_strategy(operation, generation_config, captured_variants)
+                strategy = self._build_negative_aware_strategy(
+                    operation, generation_config, captured_variants, usage_tracker
+                )
             else:
-                strategy = build_hybrid_strategy(strategy, captured_variants)
+                strategy = build_hybrid_strategy(strategy, captured_variants, usage_tracker)
 
         # Cache the strategy
         if use_cache:
@@ -363,6 +445,7 @@ class OpenApiBody(OpenApiComponent):
         operation: APIOperation,
         generation_config: GenerationConfig,
         captured_variants: list[dict[str, Any]],
+        usage_tracker: "VariantUsageTracker",
     ) -> st.SearchStrategy:
         """Build strategy for negative mode when captured values are available."""
         from hypothesis import strategies as st
@@ -372,7 +455,7 @@ class OpenApiBody(OpenApiComponent):
         positive_strategy = self.get_strategy(
             operation, generation_config, GenerationMode.POSITIVE, extra_data_source=None
         )
-        positive_strategy = build_hybrid_strategy(positive_strategy, captured_variants)
+        positive_strategy = build_hybrid_strategy(positive_strategy, captured_variants, usage_tracker)
         positive_strategy = positive_strategy.map(lambda x: GeneratedValue(x, None))
 
         negative_strategy = self.get_strategy(
@@ -381,7 +464,7 @@ class OpenApiBody(OpenApiComponent):
 
         @st.composite  # type: ignore[untyped-decorator]
         def choose_strategy(draw: st.DrawFn) -> GeneratedValue:
-            random = draw(st.randoms(use_true_random=True))
+            random = draw(st.randoms())
             if random.random() < NEGATIVE_STRATEGY_PROBABILITY:
                 return draw(negative_strategy)
             return draw(positive_strategy)
@@ -713,6 +796,7 @@ class OpenApiParameterSet(ParameterSet):
 
         # Check for captured variants for hybrid approach
         captured_variants: list[dict[str, Any]] | None = None
+        usage_tracker = None
         if extra_data_source is not None:
             from schemathesis.specs.openapi.extra_data_source import OpenApiExtraDataSource
 
@@ -720,6 +804,7 @@ class OpenApiParameterSet(ParameterSet):
                 captured_variants = extra_data_source.get_captured_variants(
                     operation=operation, location=self.location, schema=schema
                 )
+                usage_tracker = extra_data_source.usage_tracker
 
         # `JsonSchema` can be boolean (`True` / `False`), normalize to an object schema for downstream usage.
         if isinstance(schema, bool):
@@ -745,6 +830,14 @@ class OpenApiParameterSet(ParameterSet):
 
             # For negative strategies, we need to handle GeneratedValue wrappers
             is_negative = strategy_factory is make_negative_strategy
+
+            # Bias path parameter integers toward positive values in positive mode
+            if (
+                self.location == ParameterLocation.PATH
+                and not is_negative
+                and _schema_has_integer_properties(schema_obj)
+            ):
+                strategy = build_positive_biased_path_strategy(strategy)
 
             serialize = operation.get_parameter_serializer(self.location)
             if serialize is not None:
@@ -786,13 +879,15 @@ class OpenApiParameterSet(ParameterSet):
                     strategy = strategy.map(jsonify_python_specific_types)
 
         # Apply hybrid approach when captured variants are available
-        if captured_variants:
+        if captured_variants and usage_tracker is not None:
             if generation_mode.is_negative:
                 # In negative mode with captured values, mostly use positive strategy
                 # to leverage valuable captured IDs for testing deeper application logic
-                strategy = self._build_negative_aware_strategy(operation, generation_config, exclude, captured_variants)
+                strategy = self._build_negative_aware_strategy(
+                    operation, generation_config, exclude, captured_variants, usage_tracker
+                )
             else:
-                strategy = build_hybrid_strategy(strategy, captured_variants)
+                strategy = build_hybrid_strategy(strategy, captured_variants, usage_tracker)
 
         if use_cache:
             self._strategy_cache[cache_key] = strategy
@@ -804,6 +899,7 @@ class OpenApiParameterSet(ParameterSet):
         generation_config: GenerationConfig,
         exclude: Iterable[str],
         captured_variants: list[dict[str, Any]],
+        usage_tracker: "VariantUsageTracker",
     ) -> st.SearchStrategy:
         """Build strategy for negative mode when captured values are available.
 
@@ -818,7 +914,7 @@ class OpenApiParameterSet(ParameterSet):
         positive_strategy = self.get_strategy(
             operation, generation_config, GenerationMode.POSITIVE, exclude, extra_data_source=None
         )
-        positive_strategy = build_hybrid_strategy(positive_strategy, captured_variants)
+        positive_strategy = build_hybrid_strategy(positive_strategy, captured_variants, usage_tracker)
         # Wrap in GeneratedValue for consistent return type with negative strategy
         positive_strategy = positive_strategy.map(lambda x: GeneratedValue(x, None))
 
@@ -829,7 +925,7 @@ class OpenApiParameterSet(ParameterSet):
 
         @st.composite  # type: ignore[untyped-decorator]
         def choose_strategy(draw: st.DrawFn) -> GeneratedValue:
-            random = draw(st.randoms(use_true_random=True))
+            random = draw(st.randoms())
             if random.random() < NEGATIVE_STRATEGY_PROBABILITY:
                 return draw(negative_strategy)
             return draw(positive_strategy)

@@ -1,6 +1,8 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.7.9...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.8.0...HEAD) - TBD
+
+## [4.8.0](https://github.com/schemathesis/schemathesis/compare/v4.7.9...v4.8.0) - 2026-01-05
 
 ### :rocket: Added
 
@@ -11,6 +13,9 @@
 
 ### :wrench: Changed
 
+- Deprioritize `null` and `boolean` type mutations for path parameters to improve test budget efficiency.
+- Recency-weighted sampling of captured resource IDs to reduce repeated operations on the same resources.
+- Bias path parameter integers toward positive values to reduce test budget spent on likely invalid IDs.
 - Use `st.sampled_from` for captured variants instead of schema augmentation.
 - Context-aware resource pool to preserve diversity across parent resources.
 - Bias test generation toward captured IDs over random values.
@@ -18,6 +23,8 @@
 
 ### :bug: Fixed
 
+- Captured resource ID selection biased toward early indices.
+- Resource pool capacity too small, causing most captured resources to be evicted before use.
 - Resource pool not recording IDs from successful responses when other test cases in the same scenario failed.
 - Incorrect operation ordering within dependency layers.
 

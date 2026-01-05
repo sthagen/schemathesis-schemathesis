@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, TypeAlias
 
@@ -12,12 +13,94 @@ from schemathesis.resources.repository import ResourceRepository
 from schemathesis.specs.openapi.stateful.dependencies.models import DependencyGraph
 
 if TYPE_CHECKING:
+    from random import Random
+
     from schemathesis.core.transport import Response
     from schemathesis.generation.case import Case
     from schemathesis.schemas import APIOperation
 
 RequirementKey = tuple[str, ParameterLocation, str]
 DedupKey: TypeAlias = tuple[type, str | int | float | bool | None]
+
+# Decay factor for recency weighting. Higher = faster recovery of weight.
+RECENCY_DECAY_FACTOR = 3.0
+# Maximum number of variants to track. Oldest entries are evicted when exceeded.
+MAX_TRACKED_VARIANTS = 10000
+
+
+class VariantUsageTracker:
+    """Tracks variant usage for weighted sampling.
+
+    Maintains a global step counter and records when each variant was last drawn.
+    Recently drawn variants get lower weights to encourage diversity.
+    Uses LRU eviction to bound memory usage.
+    """
+
+    __slots__ = ("_step", "_last_drawn", "_maxlen", "_lock")
+
+    def __init__(self, maxlen: int = MAX_TRACKED_VARIANTS) -> None:
+        self._step = 0
+        self._last_drawn: dict[str, int] = {}
+        self._maxlen = maxlen
+        self._lock = threading.Lock()
+
+    def weighted_select(self, variant_keys: list[str], random: Random) -> int:
+        """Select a variant index using weights while avoiding Hypothesis bias.
+
+        Shuffles indices before weighted selection to ensure fair distribution.
+        The shuffle uses the random source but decouples the selection from
+        index ordering, so Hypothesis's bias toward small values doesn't
+        cause preference for early indices.
+        """
+        n = len(variant_keys)
+        with self._lock:
+            weights = [self._get_weight_unlocked(k) for k in variant_keys]
+
+        # Shuffle indices to decouple selection from original ordering.
+        # Even if Hypothesis biases toward selecting index 0 after shuffle,
+        # the shuffled order is different each draw, preventing systematic bias.
+        indices = list(range(n))
+        random.shuffle(indices)
+
+        # Build shuffled weights
+        shuffled_weights = [weights[i] for i in indices]
+        total = sum(shuffled_weights)
+
+        if total == 0:
+            # All weights zero (all recently used), pick first shuffled
+            return indices[0]
+
+        # Weighted selection from shuffled indices
+        # Even with Hypothesis's bias toward small cumulative values,
+        # the shuffled order ensures different variants get picked
+        r = random.random() * total
+        cumulative = 0.0
+        for i, w in enumerate(shuffled_weights):
+            cumulative += w
+            if r < cumulative:
+                return indices[i]
+
+        return indices[-1]
+
+    def _get_weight_unlocked(self, variant_key: str) -> float:
+        """Get weight without acquiring lock (caller must hold lock)."""
+        last_step = self._last_drawn.get(variant_key)
+        if last_step is None:
+            return 1.0
+        age = self._step - last_step
+        return age / (age + RECENCY_DECAY_FACTOR)
+
+    def record_draw(self, variant_key: str) -> None:
+        """Record that a variant was drawn, advancing the global step."""
+        with self._lock:
+            self._step += 1
+            # Delete first to move to end (maintains LRU order)
+            if variant_key in self._last_drawn:
+                del self._last_drawn[variant_key]
+            self._last_drawn[variant_key] = self._step
+            # Evict oldest if over limit
+            while len(self._last_drawn) > self._maxlen:
+                del self._last_drawn[next(iter(self._last_drawn))]
 
 
 @dataclass(slots=True, frozen=True)
@@ -46,6 +129,17 @@ class OpenApiExtraDataSource(ExtraDataSource):
 
     repository: ResourceRepository
     requirements: dict[RequirementKey, ParameterRequirement]
+    usage_tracker: VariantUsageTracker
+
+    def __init__(
+        self,
+        repository: ResourceRepository,
+        requirements: dict[RequirementKey, ParameterRequirement],
+        usage_tracker: VariantUsageTracker | None = None,
+    ) -> None:
+        self.repository = repository
+        self.requirements = requirements
+        self.usage_tracker = usage_tracker if usage_tracker is not None else VariantUsageTracker()
 
     def get_captured_variants(
         self,
