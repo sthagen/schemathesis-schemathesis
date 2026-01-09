@@ -71,6 +71,10 @@ def build_hybrid_strategy(
 
     Weights selection to prefer variants that haven't been drawn recently,
     reducing wasted test budget from repeated operations on the same resources.
+
+    Captured variants may be partial (only containing parameters with resource
+    requirements). We merge them with generated values to ensure all required
+    parameters are present.
     """
     from hypothesis import strategies as st
 
@@ -86,10 +90,16 @@ def build_hybrid_strategy(
         if random.random() >= CAPTURED_VALUES_PROBABILITY:
             return draw(original_strategy)
 
+        # Always generate base values first, then overlay captured values.
+        # This ensures parameters without resource requirements (like `file_name`)
+        # still get generated values while resource-linked params use captured data.
+        base = draw(original_strategy)
+
         # Single variant: no selection needed
         if n_variants == 1:
             usage_tracker.record_draw(variant_keys[0])
-            return captured_variants[0]
+            base.update(captured_variants[0])
+            return base
 
         # Shuffle indices before weighted selection to avoid Hypothesis's bias
         # toward early indices when using cumulative probability selection.
@@ -97,7 +107,8 @@ def build_hybrid_strategy(
 
         # Record this draw for future weighting
         usage_tracker.record_draw(variant_keys[idx])
-        return captured_variants[idx]
+        base.update(captured_variants[idx])
+        return base
 
     return hybrid()
 
@@ -420,6 +431,7 @@ class OpenApiBody(OpenApiComponent):
             self.media_type,
             generation_config,
             operation.schema.adapter.jsonschema_validator_cls,
+            self.name_to_uri,
         )
 
         # Apply hybrid approach when captured variants are available
@@ -666,7 +678,11 @@ def iter_parameters_v3(
 
 
 def resource_name_from_ref(reference: str) -> str:
-    return reference.rsplit("/", maxsplit=1)[1]
+    """Extract and normalize resource name from a $ref."""
+    from schemathesis.specs.openapi.stateful.dependencies.naming import normalize_schema_name
+
+    raw_name = reference.rsplit("/", maxsplit=1)[1]
+    return normalize_schema_name(raw_name)
 
 
 def build_path_parameter_v2(kwargs: Mapping[str, Any]) -> OpenApiParameter:
@@ -729,6 +745,18 @@ class OpenApiParameterSet(ParameterSet):
             self._schema = parameters_to_json_schema(self.items, self.location)
         assert not isinstance(self._schema, NotSet)
         return self._schema
+
+    @property
+    def name_to_uri(self) -> dict[str, str]:
+        """Combine name_to_uri from all parameters in this set.
+
+        Merging is safe because a single Bundler instance is used for all parameters,
+        so bundled schema names are globally unique with no overlap between parameters.
+        """
+        result: dict[str, str] = {}
+        for item in self.items:
+            result.update(item.name_to_uri)
+        return result
 
     def get_schema_with_exclusions(self, exclude: Iterable[str]) -> dict[str, Any]:
         """Get cached schema with specified parameters excluded."""
@@ -826,6 +854,7 @@ class OpenApiParameterSet(ParameterSet):
                 None,
                 generation_config,
                 operation.schema.adapter.jsonschema_validator_cls,
+                self.name_to_uri,
             )
 
             # For negative strategies, we need to handle GeneratedValue wrappers

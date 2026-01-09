@@ -73,7 +73,12 @@ def resolve_all_refs_inner(schema: JsonSchema, *, resolve: Callable[[str], dict[
         del schema["$ref"]
         schema.pop(BUNDLE_STORAGE_KEY, None)
         schema.pop("example", None)
-        return merged([resolve_all_refs_inner(schema, resolve=resolve), resolved])
+        result = merged([resolve_all_refs_inner(schema, resolve=resolve), resolved])
+        # hypothesis_jsonschema's merged() can return None for irreconcilable schemas.
+        # For dependency analysis, fall back to the resolved ref which has the resource structure.
+        if result is None:
+            return resolved
+        return result
 
     for key, value in schema.items():
         if key in SCHEMA_KEYS:
@@ -88,13 +93,19 @@ def resolve_all_refs_inner(schema: JsonSchema, *, resolve: Callable[[str], dict[
     return schema
 
 
-def canonicalize(schema: dict[str, Any], resolver: RefResolver) -> Mapping[str, Any]:
+def canonicalize(
+    schema: dict[str, Any], resolver: RefResolver, *, nullable_keyword: str = "nullable"
+) -> Mapping[str, Any]:
     """Transform the input schema into its canonical-ish form."""
     from hypothesis_jsonschema._canonicalise import canonicalish
+
+    from schemathesis.specs.openapi.converter import to_json_schema
 
     # Canonicalisation in `hypothesis_jsonschema` requires all references to be resovable and non-recursive
     # On the Schemathesis side bundling solves this problem
     bundled = bundle(schema, resolver, inline_recursive=True).schema
+    # Translate PCRE patterns (e.g., \p{L}) to Python-compatible equivalents before hypothesis_jsonschema processes them
+    bundled = to_json_schema(bundled, nullable_keyword, update_quantifiers=False)
     canonicalized = canonicalish(bundled)
     resolved = resolve_all_refs(canonicalized)
     resolved.pop(BUNDLE_STORAGE_KEY, None)

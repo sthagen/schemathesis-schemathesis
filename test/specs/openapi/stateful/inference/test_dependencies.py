@@ -1596,6 +1596,32 @@ def snapshot_json(snapshot):
             },
             id="slug-suffix-field-matching",
         ),
+        # POST returns bare string identifier - like Mealie POST /api/recipes returning slug
+        pytest.param(
+            {
+                **operation("post", "/recipes", "201", {"type": "string"}),
+                **operation(
+                    "get",
+                    "/recipes/{slug}",
+                    "200",
+                    component_ref("Recipe"),
+                    [path_param("slug")],
+                ),
+            },
+            {
+                "schemas": {
+                    "Recipe": {
+                        "type": "object",
+                        "properties": {
+                            "slug": {"type": "string"},
+                            "name": {"type": "string"},
+                        },
+                        "required": ["slug"],
+                    },
+                }
+            },
+            id="post-returns-string-identifier",
+        ),
     ],
 )
 def test_dependency_graph(request, ctx, paths, components, snapshot_json):
@@ -3394,3 +3420,92 @@ def test_stateful_discovers_bug_with_custom_deserializer(cli, app_runner, snapsh
         )
         == snapshot_cli
     )
+
+
+def test_canonicalize_with_merged_returning_none(ctx):
+    raw_schema = ctx.openapi.build_schema(
+        {
+            "/items": {
+                "post": {
+                    "responses": {
+                        "201": {
+                            "description": "Created",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "allOf": [
+                                            {"$ref": "#/components/schemas/integration"},
+                                            {"properties": {"webhook_secret": {"nullable": True, "": ""}}},
+                                        ]
+                                    }
+                                }
+                            },
+                        }
+                    },
+                }
+            }
+        },
+        version="3.0.3",
+        components={
+            "schemas": {
+                "integration": {"properties": {"webhook_secret": {"": "a", "nullable": True}}},
+            }
+        },
+    )
+    schema = schemathesis.openapi.from_dict(raw_schema)
+    analyze(schema)
+
+
+def test_merged_returning_none_with_anyof_schema(ctx):
+    raw_schema = {
+        "openapi": "3.1.0",
+        "info": {"title": "Test", "version": "1.0"},
+        "paths": {
+            "/items": {
+                "post": {
+                    "responses": {
+                        "201": {
+                            "description": "Created",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "allOf": [
+                                            {"$ref": "#/components/schemas/Base"},
+                                            {
+                                                "type": "object",
+                                                "properties": {
+                                                    "field": {
+                                                        "anyOf": [
+                                                            {"type": "string", "const": "value_a"},
+                                                            {"type": "null"},
+                                                        ]
+                                                    }
+                                                },
+                                            },
+                                        ]
+                                    }
+                                }
+                            },
+                        }
+                    },
+                }
+            }
+        },
+        "components": {
+            "schemas": {
+                "Base": {
+                    "type": "object",
+                    "properties": {
+                        "field": {
+                            "anyOf": [
+                                {"type": "string", "const": "value_b"},  # Different const!
+                                {"type": "null"},
+                            ]
+                        }
+                    },
+                }
+            }
+        },
+    }
+    schema = schemathesis.openapi.from_dict(raw_schema)
+    analyze(schema)

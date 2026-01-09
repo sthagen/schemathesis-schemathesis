@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+# Generic parameter prefixes that don't identify a specific resource type.
+# When a parameter like "item_id" or "resource_uuid" is detected, the prefix
+# is not meaningful for resource identification, so we fall back to path-based naming.
+GENERIC_PREFIXES = frozenset({"item", "resource", "object", "entity"})
+
 
 def from_parameter(parameter: str, path: str) -> str | None:
     parameter = parameter.strip()
@@ -14,6 +19,10 @@ def from_parameter(parameter: str, path: str) -> str | None:
         if parameter.endswith(suffix):
             prefix = parameter[: -len(suffix)]
             if len(prefix) >= 2:
+                # Generic prefixes like "itemId" should use path context,
+                # but only if this is a path parameter (placeholder exists in path)
+                if prefix.lower() in GENERIC_PREFIXES and f"{{{parameter}}}" in path:
+                    return from_path(path, parameter_name=parameter)
                 return to_pascal_case(prefix)
 
     # Snake_case (case-insensitive is fine here)
@@ -34,6 +43,10 @@ def from_parameter(parameter: str, path: str) -> str | None:
         if lower.endswith(suffix):
             prefix = parameter[: -len(suffix)]
             if len(prefix) >= 2:
+                # Generic prefixes like "item_id" should use path context,
+                # but only if this is a path parameter (placeholder exists in path)
+                if prefix.lower() in GENERIC_PREFIXES and f"{{{parameter}}}" in path:
+                    return from_path(path, parameter_name=parameter)
                 return to_pascal_case(prefix)
 
     # Special cases that need exact match
@@ -42,6 +55,10 @@ def from_parameter(parameter: str, path: str) -> str | None:
         prefix = parameter[:-3]
         if len(prefix) >= 2:
             return to_pascal_case(prefix)
+
+    # Bare "slug" parameter - use path context if it's a path parameter
+    if lower == "slug" and f"{{{parameter}}}" in path:
+        return from_path(path, parameter_name=parameter)
 
     return None
 
@@ -524,3 +541,31 @@ def strip_affixes(name: str, prefixes: list[str], suffixes: list[str]) -> str:
             break
 
     return result.strip()
+
+
+_HYPHENATED_SCHEMA_SUFFIXES = ("-Output", "-Input", "-Response", "-Request")
+# NOTE: "Response"/"Request" excluded - often wrappers, not variants
+# NOTE: "Summary" excluded - ambiguous (may have different identifier)
+_PASCALCASE_SCHEMA_SUFFIXES = ("Output", "Input", "Out", "In", "DTO", "Dto")
+_MIN_BASE_LENGTH = 2
+
+
+def normalize_schema_name(name: str) -> str:
+    """Normalize schema name by removing common suffixes (-Output, Out, DTO, etc.)."""
+    if not name or len(name) < _MIN_BASE_LENGTH + 2:
+        return name
+
+    for suffix in _HYPHENATED_SCHEMA_SUFFIXES:
+        if name.endswith(suffix):
+            base = name[: -len(suffix)]
+            if len(base) >= _MIN_BASE_LENGTH:
+                return base
+            return name
+
+    for suffix in _PASCALCASE_SCHEMA_SUFFIXES:
+        if name.endswith(suffix) and len(name) > len(suffix):
+            base = name[: -len(suffix)]
+            if len(base) >= _MIN_BASE_LENGTH and base[-1].islower():
+                return base
+
+    return name

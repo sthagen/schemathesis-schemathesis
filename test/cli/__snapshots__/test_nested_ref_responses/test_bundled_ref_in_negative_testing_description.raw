@@ -9,29 +9,30 @@ Schemathesis dev
 
      Base URL:         http://127.0.0.1/
      Specification:    Open API 3.0.2
-     Operations:       3 selected / 3 total
+     Operations:       1 selected / 1 total
 
 
  ✅  API capabilities:
 
      Supports NULL byte in headers:    ✓
 
- ❌  Stateful (in 0.00s)
+ ❌  Fuzzing (in 0.00s)
 
-     Scenarios:    N
-     API Links:    N covered / 3 selected / 3 total (3 inferred)
-
-     ✅ N passed  ❌ 1 failed
+     ❌ 1 failed
 
 =================================== FAILURES ===================================
-________________________________ Stateful tests ________________________________
+_________________________________ POST /items __________________________________
 1. Test Case ID: <PLACEHOLDER>
 
-- Server error
+- API accepted schema-violating request
 
-[500] Internal Server Error:
+    Invalid data should have been rejected
+    Expected: 400, 401, 403, 404, 406, 422, 428, 5xx
+    Invalid component: in body - violates `allOf` ([{'$ref': '#/components/schemas/Item'}, {'$ref': '#/components/schemas/Category'}])
 
-    `{"error":"Internal server error"}`
+[201] Created:
+
+    `{"id":1}`
 
 Reproduce with:
 
@@ -40,20 +41,20 @@ Reproduce with:
 =================================== SUMMARY ====================================
 
 API Operations:
-  Selected: 3/3
-  Tested: 3
+  Selected: 1/1
+  Tested: 1
 
 Test Phases:
   ⏭  Examples (disabled)
   ⏭  Coverage (disabled)
-  ⏭  Fuzzing (disabled)
-  ❌ Stateful
+  ❌ Fuzzing
+  ⏭  Stateful (disabled)
 
 Failures:
-  ❌ Server error: 1
+  ❌ API accepted schema-violating request: 1
 
 Test cases:
-  N generated, N found N unique failures, N skipped
+  N generated, N found N unique failures
 
 Seed: 42
 
