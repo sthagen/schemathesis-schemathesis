@@ -5,7 +5,7 @@ from functools import lru_cache
 
 from schemathesis.core.errors import InternalError
 
-# Unicode property escape translations (PCRE/Java/JS → Python approximations)
+# Unicode property escape translations (PCRE/Java/JS -> Python approximations)
 # These cover Latin-based scripts which handle the majority of real-world APIs
 _LETTER_CLASS = r"a-zA-Z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u024F"
 _LETTER_UPPER_CLASS = r"A-Z\u00C0-\u00D6\u00D8-\u00DE\u0100-\u0136\u0139-\u0147\u014A-\u0178\u0179-\u017D"
@@ -526,7 +526,7 @@ def _handle_repeat_quantifier(
         parsed = sre_parse.parse(inner)
         if all(item[0] == LITERAL for item in parsed):
             inner_length = len(parsed)
-            if max_length and max_length > 0 and inner_length > max_length:
+            if max_length and 0 < max_length < inner_length:
                 return pattern
     except re.error:
         pass

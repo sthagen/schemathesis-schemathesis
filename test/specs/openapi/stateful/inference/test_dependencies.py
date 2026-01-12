@@ -1622,6 +1622,92 @@ def snapshot_json(snapshot):
             },
             id="post-returns-string-identifier",
         ),
+        # Sub-resource inside array items should be discovered
+        # Like Mealie's AllBackups.imports which is an array of BackupFile refs
+        pytest.param(
+            {
+                **operation(
+                    "get",
+                    "/backups",
+                    "200",
+                    component_ref("AllBackups"),
+                ),
+                **operation(
+                    "delete",
+                    "/backups/{file_name}",
+                    "200",
+                    None,
+                    [path_param("file_name")],
+                ),
+            },
+            {
+                "schemas": {
+                    "AllBackups": {
+                        "type": "object",
+                        "properties": {
+                            "imports": {
+                                "type": "array",
+                                "items": component_ref("BackupFile"),
+                            },
+                            "templates": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                        },
+                    },
+                    "BackupFile": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "date": {"type": "string"},
+                            "size": {"type": "string"},
+                        },
+                        "required": ["name"],
+                    },
+                }
+            },
+            id="subresource-in-array-items",
+        ),
+        # Prefix matching: parameter "group_slug" → inferred "Group" not found →
+        # but "GroupSummary" starts with "Group" and has "slug" field
+        # Like Mealie's /api/explore/groups/{group_slug}/... endpoints
+        pytest.param(
+            {
+                **operation(
+                    "get",
+                    "/groups/self",
+                    "200",
+                    component_ref("GroupSummary"),
+                ),
+                **operation(
+                    "get",
+                    "/explore/groups/{group_slug}/recipes",
+                    "200",
+                    component_ref("RecipeList"),
+                    [path_param("group_slug")],
+                ),
+            },
+            {
+                "schemas": {
+                    "GroupSummary": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string"},
+                            "name": {"type": "string"},
+                            "slug": {"type": "string"},
+                        },
+                        "required": ["id", "slug"],
+                    },
+                    "RecipeList": {
+                        "type": "object",
+                        "properties": {
+                            "items": {"type": "array", "items": {"type": "object"}},
+                        },
+                    },
+                }
+            },
+            id="prefix-matching-group-slug",
+        ),
     ],
 )
 def test_dependency_graph(request, ctx, paths, components, snapshot_json):
@@ -1846,7 +1932,7 @@ def test_schema_inference_discovers_state_corruption(cli, app_runner, snapshot_c
         data = request.get_json() or {}
         if not isinstance(data, dict):
             return {"error": "Invalid input"}, 400
-        if not isinstance(data.get("price", 0), (int, float)):
+        if not isinstance(data.get("price", 0), (int | float)):
             return {"error": "Invalid price"}, 400
 
         product_id = str(next_id)

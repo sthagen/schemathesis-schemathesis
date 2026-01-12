@@ -34,10 +34,12 @@ def from_parameter(parameter: str, path: str) -> str | None:
         "_uuid",
         "_id",
         "_slug",
+        "_name",
         "-guid",
         "-uuid",
         "-id",
         "-slug",
+        "-name",
     )
     for suffix in snake_suffixes:
         if lower.endswith(suffix):
@@ -473,6 +475,29 @@ def find_matching_field(*, parameter: str, resource: str, fields: list[str]) -> 
                 if _normalize_for_matching(field) == id_name:
                     return field
 
+    # Resource-hint matching for underscore-separated parameters
+    # Example: file_name -> BackupFile.name (resource ends with prefix)
+    # Example: group_slug -> GroupSummary.slug (resource starts with prefix)
+    # The parameter prefix hints at the resource type, suffix is the field name
+    if "_" in parameter:
+        last_underscore = parameter.rfind("_")
+        if last_underscore > 0:  # Ensure there's actually a prefix
+            param_prefix = parameter[:last_underscore]
+            param_suffix = parameter[last_underscore + 1 :]
+
+            # Conservative: require minimum prefix length (3 chars) to avoid spurious matches
+            if len(param_prefix) >= 3 and param_suffix:
+                prefix_normalized = _normalize_for_matching(param_prefix)
+                suffix_normalized = _normalize_for_matching(param_suffix)
+
+                # Check if resource name ends with OR starts with the prefix
+                # Suffix: "BackupFile" ends with "file" for parameter "file_name"
+                # Prefix: "GroupSummary" starts with "group" for parameter "group_slug"
+                if resource_normalized.endswith(prefix_normalized) or resource_normalized.startswith(prefix_normalized):
+                    for field in fields:
+                        if _normalize_for_matching(field) == suffix_normalized:
+                            return field
+
     return None
 
 
@@ -502,25 +527,25 @@ def _split_parameter_name(parameter_name: str) -> tuple[str, str]:
 
     """
     if parameter_name.endswith("Id") and len(parameter_name) > 2:
-        return (parameter_name[:-2], "Id")
+        return parameter_name[:-2], "Id"
 
     # Composite suffixes first (longer patterns before shorter ones)
     if parameter_name.endswith("_id_or_slug") and len(parameter_name) > 11:
-        return (parameter_name[:-11], "_id_or_slug")
+        return parameter_name[:-11], "_id_or_slug"
 
     if parameter_name.endswith("-id-or-slug") and len(parameter_name) > 11:
-        return (parameter_name[:-11], "-id-or-slug")
+        return parameter_name[:-11], "-id-or-slug"
 
     if parameter_name.endswith("_id") and len(parameter_name) > 3:
-        return (parameter_name[:-3], "_id")
+        return parameter_name[:-3], "_id"
 
     if parameter_name.endswith("_guid") and len(parameter_name) > 5:
-        return (parameter_name[:-5], "_guid")
+        return parameter_name[:-5], "_guid"
 
     if parameter_name.endswith("_slug") and len(parameter_name) > 5:
-        return (parameter_name[:-5], "_slug")
+        return parameter_name[:-5], "_slug"
 
-    return ("", parameter_name)
+    return "", parameter_name
 
 
 def strip_affixes(name: str, prefixes: list[str], suffixes: list[str]) -> str:

@@ -75,6 +75,7 @@
     "GET /matchingworkflows/{workflowName}/jobs/{jobId}": {
       "inputs": [
         {
+          "is_suffix_matched": true,
           "parameter_location": "path",
           "parameter_name": "jobId",
           "resource": "StartMatchingJob",

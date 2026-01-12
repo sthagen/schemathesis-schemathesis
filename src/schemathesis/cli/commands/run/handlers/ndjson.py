@@ -19,6 +19,7 @@ from schemathesis.core.transforms import Unresolvable
 from schemathesis.core.transport import Response
 from schemathesis.core.version import SCHEMATHESIS_VERSION
 from schemathesis.engine import events
+from schemathesis.engine.recorder import Request as RecorderRequest
 
 if TYPE_CHECKING:
     from schemathesis.config import ProjectConfig, SanitizationConfig
@@ -30,7 +31,27 @@ SKIP_FIELDS: dict[str, frozenset[str]] = {
     "LoadingFinished": frozenset({"schema", "config", "find_operation_by_label"}),
     "Case": frozenset({"operation"}),
     "NonFatalError": frozenset({"info"}),  # Duplicate of `value`
+    "CheckFailureInfo": frozenset({"code_sample"}),  # Reconstructable from case + interaction
 }
+
+# Standard request headers that are always the same and not useful for analysis
+SKIP_REQUEST_HEADERS: frozenset[str] = frozenset(
+    {
+        "User-Agent",  # Always schemathesis/<version>
+        "Accept-Encoding",  # Always gzip, deflate, zstd
+        "Accept",  # Always */*
+        "Connection",  # Always keep-alive
+        "Content-Length",  # Derivable from body
+        "X-Schemathesis-TestCaseId",  # Already the key in interactions dict
+    }
+)
+
+# Response headers that are not useful for analysis
+SKIP_RESPONSE_HEADERS: frozenset[str] = frozenset(
+    {
+        "date",  # Server timestamp, not useful
+    }
+)
 
 
 def serialize(obj: Any, *, sanitization: SanitizationConfig | None = None) -> Any:
@@ -41,7 +62,7 @@ def serialize(obj: Any, *, sanitization: SanitizationConfig | None = None) -> An
         return None
     if isinstance(obj, Unresolvable):
         return {"$unresolvable": True}
-    if obj is None or isinstance(obj, (bool, int, float, str)):
+    if obj is None or isinstance(obj, bool | int | float | str):
         return obj
     if isinstance(obj, bytes):
         return {"$base64": base64.b64encode(obj).decode("ascii")}
@@ -51,7 +72,7 @@ def serialize(obj: Any, *, sanitization: SanitizationConfig | None = None) -> An
         return {k: serialize(v, sanitization=sanitization) for k, v in obj.items()}
     if isinstance(obj, Mapping):
         return {k: serialize(v, sanitization=sanitization) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
+    if isinstance(obj, list | tuple):
         return [serialize(v, sanitization=sanitization) for v in obj]
     if isinstance(obj, Ok):
         return serialize(obj.ok(), sanitization=sanitization)
@@ -61,15 +82,13 @@ def serialize(obj: Any, *, sanitization: SanitizationConfig | None = None) -> An
         headers = serialize(obj.headers, sanitization=sanitization)
         if sanitization is not None:
             sanitize_value(headers, config=sanitization)
+        # Filter out headers that are not useful for analysis
+        headers = {k: v for k, v in headers.items() if k.lower() not in {h.lower() for h in SKIP_RESPONSE_HEADERS}}
         return {
             "status_code": obj.status_code,
             "headers": headers,
             "content": serialize(obj.content, sanitization=sanitization),
             "elapsed": obj.elapsed,
-            "verify": obj.verify,
-            "message": obj.message,
-            "http_version": obj.http_version,
-            "encoding": obj.encoding,
         }
     if isinstance(obj, requests.PreparedRequest):
         url = obj.url or ""
@@ -86,6 +105,21 @@ def serialize(obj: Any, *, sanitization: SanitizationConfig | None = None) -> An
         }
     if isinstance(obj, Exception):
         return {"type": type(obj).__name__, "message": str(obj)}
+    if isinstance(obj, RecorderRequest):
+        # Filter out standard headers that are not useful for analysis
+        headers = {k: v for k, v in obj.headers.items() if k not in SKIP_REQUEST_HEADERS}
+        if sanitization is not None:
+            sanitize_value(headers, config=sanitization)
+        result: dict[str, Any] = {
+            "method": obj.method,
+            "uri": obj.uri,
+            "headers": headers,
+        }
+        if sanitization is not None:
+            result["uri"] = sanitize_url(obj.uri, config=sanitization)
+        if obj.body is not None:
+            result["body"] = serialize(obj.body, sanitization=sanitization)
+        return result
     if is_dataclass(obj) and not isinstance(obj, type):
         dc_data = {}
         skip = SKIP_FIELDS.get(type(obj).__name__, frozenset())
