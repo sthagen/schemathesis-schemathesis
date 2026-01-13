@@ -51,6 +51,10 @@ from .negative import GeneratedValue, negative_schema
 from .negative.utils import can_negate
 
 SLASH = "/"
+# Probability threshold for generating "clean" headers (ASCII without control characters)
+CLEAN_HEADER_THRESHOLD = 0.95
+# ASCII control characters (0x00-0x1F and 0x7F) that are invalid in HTTP headers
+ASCII_CONTROL_CHARS = "".join(chr(i) for i in range(32)) + "\x7f"
 StrategyFactory = Callable[
     [JsonSchema, str, ParameterLocation, str | None, GenerationConfig, type[jsonschema.protocols.Validator]],
     st.SearchStrategy,
@@ -92,6 +96,9 @@ def openapi_cases(
 
     ctx = HookContext(operation=operation)
 
+    # Don't mix in schema examples during EXAMPLES phase - they're handled separately there
+    mix_examples = phase != TestPhase.EXAMPLES
+
     path_parameters_ = generate_parameter(
         ParameterLocation.PATH,
         path_parameters,
@@ -102,6 +109,7 @@ def openapi_cases(
         generation_mode,
         generation_config,
         extra_data_source=extra_data_source,
+        mix_examples=mix_examples,
     )
     headers_ = generate_parameter(
         ParameterLocation.HEADER,
@@ -113,6 +121,7 @@ def openapi_cases(
         generation_mode,
         generation_config,
         extra_data_source=extra_data_source,
+        mix_examples=mix_examples,
     )
     cookies_ = generate_parameter(
         ParameterLocation.COOKIE,
@@ -124,6 +133,7 @@ def openapi_cases(
         generation_mode,
         generation_config,
         extra_data_source=extra_data_source,
+        mix_examples=mix_examples,
     )
     query_ = generate_parameter(
         ParameterLocation.QUERY,
@@ -135,6 +145,7 @@ def openapi_cases(
         generation_mode,
         generation_config,
         extra_data_source=extra_data_source,
+        mix_examples=mix_examples,
     )
 
     if body is NOT_SET:
@@ -151,7 +162,13 @@ def openapi_cases(
                 candidates = operation.body.items
             parameter = draw(st.sampled_from(candidates))
             strategy = _get_body_strategy(
-                parameter, operation, generation_config, draw, body_generator, extra_data_source=extra_data_source
+                parameter,
+                operation,
+                generation_config,
+                draw,
+                body_generator,
+                extra_data_source=extra_data_source,
+                mix_examples=mix_examples,
             )
             strategy = apply_hooks(operation, ctx, hooks, strategy, ParameterLocation.BODY)
             # Parameter may have a wildcard media type. In this case, choose any supported one
@@ -536,6 +553,7 @@ def _get_body_strategy(
     draw: st.DrawFn,
     generation_mode: GenerationMode,
     extra_data_source: ExtraDataSource | None = None,
+    mix_examples: bool = True,
 ) -> st.SearchStrategy:
     # Check for custom encoding in form bodies (multipart/form-data or application/x-www-form-urlencoded)
     if parameter.media_type in FORM_MEDIA_TYPES:
@@ -553,7 +571,7 @@ def _get_body_strategy(
 
     # Use the cached strategy from the parameter
     strategy = parameter.get_strategy(
-        operation, generation_config, generation_mode, extra_data_source=extra_data_source
+        operation, generation_config, generation_mode, extra_data_source=extra_data_source, mix_examples=mix_examples
     )
     return _maybe_set_optional_body(strategy, parameter, draw)
 
@@ -568,6 +586,7 @@ def get_parameters_value(
     generation_mode: GenerationMode,
     generation_config: GenerationConfig,
     extra_data_source: ExtraDataSource | None = None,
+    mix_examples: bool = True,
 ) -> tuple[dict[str, Any] | None, Any]:
     """Get the final value for the specified location.
 
@@ -576,7 +595,12 @@ def get_parameters_value(
     """
     if value is None:
         strategy = get_parameters_strategy(
-            operation, generation_mode, location, generation_config, extra_data_source=extra_data_source
+            operation,
+            generation_mode,
+            location,
+            generation_config,
+            extra_data_source=extra_data_source,
+            mix_examples=mix_examples,
         )
         strategy = apply_hooks(operation, ctx, hooks, strategy, location)
         result = draw(strategy)
@@ -591,6 +615,7 @@ def get_parameters_value(
         generation_config,
         exclude=value.keys(),
         extra_data_source=extra_data_source,
+        mix_examples=mix_examples,
     )
     strategy = apply_hooks(operation, ctx, hooks, strategy, location)
     new = draw(strategy)
@@ -637,6 +662,7 @@ def generate_parameter(
     generator: GenerationMode,
     generation_config: GenerationConfig,
     extra_data_source: ExtraDataSource | None = None,
+    mix_examples: bool = True,
 ) -> ValueContainer:
     """Generate a value for a parameter.
 
@@ -659,6 +685,7 @@ def generate_parameter(
         generator,
         generation_config,
         extra_data_source=extra_data_source,
+        mix_examples=mix_examples,
     )
     used_generator: GenerationMode | None = generator
     if value == explicit:
@@ -698,6 +725,7 @@ def get_parameters_strategy(
     generation_config: GenerationConfig,
     exclude: Iterable[str] = (),
     extra_data_source: ExtraDataSource | None = None,
+    mix_examples: bool = True,
 ) -> st.SearchStrategy:
     """Create a new strategy for the case's component from the API operation parameters."""
     container = getattr(operation, location.container_name)
@@ -708,6 +736,7 @@ def get_parameters_strategy(
             generation_mode,
             exclude,
             extra_data_source=extra_data_source,
+            mix_examples=mix_examples,
         )
     # No parameters defined for this location
     return st.none()
@@ -735,17 +764,34 @@ def jsonify_python_specific_types(value: dict[str, Any]) -> dict[str, Any]:
 
 def _build_custom_formats(generation_config: GenerationConfig) -> dict[str, st.SearchStrategy]:
     custom_formats = {**get_default_format_strategies(), **STRING_FORMATS}
-    header_values_kwargs = {}
+    header_values_kwargs: dict[str, Any] = {}
     if generation_config.exclude_header_characters is not None:
         header_values_kwargs["exclude_characters"] = generation_config.exclude_header_characters
         if not generation_config.allow_x00:
             header_values_kwargs["exclude_characters"] += "\x00"
     elif not generation_config.allow_x00:
         header_values_kwargs["exclude_characters"] = DEFAULT_HEADER_EXCLUDE_CHARACTERS + "\x00"
-    if generation_config.codec is not None:
+    if generation_config.codec not in (None, "utf-8"):
+        # User explicitly set a non-default codec - use it directly
         header_values_kwargs["codec"] = generation_config.codec
-    if header_values_kwargs:
         custom_formats[HEADER_FORMAT] = header_values(**header_values_kwargs)
+    else:
+        # Default codec - use probabilistic clean/fuzzing headers
+        base_exclude = header_values_kwargs.get("exclude_characters", "")
+        clean_exclude = base_exclude + ASCII_CONTROL_CHARS
+        # Deduplicate
+        clean_exclude = "".join(sorted(set(clean_exclude)))
+
+        @st.composite  # type: ignore[untyped-decorator]
+        def header_strategy(draw: st.DrawFn) -> str:
+            random = draw(st.randoms())
+            if random.random() < CLEAN_HEADER_THRESHOLD:
+                # Clean headers: ASCII without control characters
+                return draw(header_values(codec="ascii", exclude_characters=clean_exclude))
+            # Fuzzing headers: allow unicode and control characters
+            return draw(header_values(**header_values_kwargs))
+
+        custom_formats[HEADER_FORMAT] = header_strategy()
     return custom_formats
 
 
