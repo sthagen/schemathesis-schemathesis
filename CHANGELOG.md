@@ -1,6 +1,12 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.9.0...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.9.1...HEAD) - TBD
+
+## [4.9.1](https://github.com/schemathesis/schemathesis/compare/v4.9.0...v4.9.1) - 2026-01-15
+
+### :bug: Fixed
+
+- Duplicate entries in `required` array causing "non-unique elements" schema validation errors. [#3460](https://github.com/schemathesis/schemathesis/issues/3460)
 
 ## [4.9.0](https://github.com/schemathesis/schemathesis/compare/v4.8.0...v4.9.0) - 2026-01-13
 
