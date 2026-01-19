@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "schemathesis"
-version = "4.9.1"
+version = "4.9.2"
 description = "Property-based testing framework for Open API and GraphQL based apps"
 keywords = ["pytest", "hypothesis", "openapi", "graphql", "testing"]
 authors = [{ name = "Dmitry Dygalo", email = "dmitry@dygalo.dev" }]
@@ -95,6 +95,10 @@ addopts = ["-ra", "--strict-markers", "--strict-config"]
 xfail_strict = true
 testpaths = "tests"
 norecursedirs = ".hypothesis .idea .git src docs .pytest_cache .mypy_cache .tox"
+filterwarnings = [
+    # anyio streams not closed during aiohttp test server teardown (flaky on Python 3.13+)
+    "ignore:Unclosed <MemoryObject.*:ResourceWarning",
+]
 
 [tool.coverage.run]
 parallel = true
