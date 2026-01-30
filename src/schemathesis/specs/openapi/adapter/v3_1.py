@@ -1,4 +1,4 @@
-from jsonschema import Draft202012Validator
+from jsonschema_rs import Draft202012Validator
 
 from schemathesis.specs.openapi.adapter import (
     base_paths,

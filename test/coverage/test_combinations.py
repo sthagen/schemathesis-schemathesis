@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from unittest.mock import ANY
 
-import jsonschema.validators
+import jsonschema_rs
 import pytest
 
 from schemathesis.core.parameters import ParameterLocation
@@ -40,31 +40,31 @@ def assert_unique(values: list):
 
 
 def assert_conform(values: list, schema: dict):
+    try:
+        validator = jsonschema_rs.Draft7Validator(schema, validate_formats=True)
+    except jsonschema_rs.ValidationError:
+        # Schema itself is invalid (e.g., pattern: 0.0), skip validation
+        return
     for value in values:
         if isinstance(value, GeneratedValue):
             value = value.value
-        jsonschema.validate(
-            value,
-            schema,
-            cls=jsonschema.Draft7Validator,
-            format_checker=jsonschema.Draft202012Validator.FORMAT_CHECKER,
-        )
+        validator.validate(value)
 
 
 def assert_not_conform(values: list, schema: dict):
     if isinstance(schema, dict) and schema.get("format") == "unknown":
         # Can't validate the format
         return
+    try:
+        validator = jsonschema_rs.Draft7Validator(schema, validate_formats=True)
+    except jsonschema_rs.ValidationError:
+        # Schema itself is invalid (e.g., pattern: 0.0), skip validation
+        return
     for entry in values:
         try:
-            jsonschema.validate(
-                entry,
-                schema,
-                cls=jsonschema.Draft7Validator,
-                format_checker=jsonschema.Draft202012Validator.FORMAT_CHECKER,
-            )
+            validator.validate(entry)
             raise AssertionError(f"Value {entry} conforms to {schema}")
-        except (jsonschema.ValidationError, ValueError):
+        except (jsonschema_rs.ValidationError, ValueError):
             pass
 
 
@@ -84,7 +84,7 @@ def ctx_factory():
             generation_modes=generation_modes,
             is_required=is_required,
             custom_formats=get_default_format_strategies(),
-            validator_cls=jsonschema.validators.Draft202012Validator,
+            validator_cls=jsonschema_rs.Draft4Validator,
             allow_extra_parameters=allow_extra_parameters,
         )
 
@@ -153,7 +153,8 @@ class AnyNumber:
         ({"multipleOf": 2}, lambda x: x % 2 != 0),
         ({"format": "date-time"}, [AnyString()]),
         ({"format": "hostname"}, [AnyString()]),
-        ({"format": "unknown"}, [AnyString()]),
+        # Unknown formats have no validation semantics, so no negative cases can be generated
+        ({"format": "unknown"}, []),
         ({"uniqueItems": True}, [["null", "null"]]),
         ({"maximum": 5}, [6]),
         ({"minimum": 5}, [4]),
@@ -826,7 +827,7 @@ def test_positive_number(ctx, schema, multiple_of, values, with_multiple_of):
             },
             [6, 7, 10, 9],
         ),
-        # Unsatisfiable allOf
+        # Unsatisfiable allOf - PCRE pattern not supported by Python regex
         (
             {
                 "allOf": [
@@ -836,6 +837,7 @@ def test_positive_number(ctx, schema, multiple_of, values, with_multiple_of):
             },
             [],
         ),
+        # Unsatisfiable allOf - invalid pattern type
         (
             {
                 "allOf": [
@@ -1258,7 +1260,7 @@ def test_negative_one_of(schema, expected):
         generation_modes=[GenerationMode.NEGATIVE],
         is_required=True,
         custom_formats=get_default_format_strategies(),
-        validator_cls=jsonschema.validators.Draft202012Validator,
+        validator_cls=jsonschema_rs.Draft202012Validator,
     )
     covered = cover_schema(nctx, schema)
     assert_not_conform(covered, schema)

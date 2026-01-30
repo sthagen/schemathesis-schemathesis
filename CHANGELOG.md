@@ -2,6 +2,14 @@
 
 ## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.9.5...HEAD) - TBD
 
+### :bug: Fixed
+
+- False positive `negative_data_rejection` failures for `format: password` and other formats without validation semantics. [#3480](https://github.com/schemathesis/schemathesis/issues/3480)
+
+### :wrench: Changed
+
+- Use `jsonschema-rs` for data validation instead of `jsonschema`.
+
 ## [4.9.5](https://github.com/schemathesis/schemathesis/compare/v4.9.4...v4.9.5) - 2026-01-29
 
 ### :bug: Fixed

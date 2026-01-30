@@ -9,7 +9,7 @@ from typing import (
 )
 
 if TYPE_CHECKING:
-    from jsonschema.protocols import Validator
+    import jsonschema_rs
 
     from schemathesis.core.adapter import OperationParameter
     from schemathesis.core.compat import RefResolver
@@ -102,4 +102,4 @@ class SpecificationAdapter(Protocol):
     extract_security_definitions: ExtractSecurityDefinitions
 
     # JSON Schema validator class appropriate for this specification version
-    jsonschema_validator_cls: type[Validator]
+    jsonschema_validator_cls: type[jsonschema_rs.Validator]

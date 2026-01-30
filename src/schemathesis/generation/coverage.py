@@ -25,7 +25,8 @@ from json.encoder import JSONEncoder, encode_basestring_ascii
 from typing import Any, TypeVar, cast
 from urllib.parse import quote_plus
 
-import jsonschema.protocols
+import jsonschema.exceptions
+import jsonschema_rs
 from hypothesis import strategies as st
 from hypothesis.errors import InvalidArgument, Unsatisfiable
 from hypothesis_jsonschema import from_schema
@@ -46,6 +47,61 @@ from schemathesis.openapi.generation.filters import is_invalid_path_parameter
 from ..specs.openapi.converter import update_pattern_in_schema
 from ..specs.openapi.formats import STRING_FORMATS, get_default_format_strategies
 from ..specs.openapi.patterns import update_quantifier
+
+VALIDATED_FORMATS = frozenset(
+    {
+        "date",
+        "date-time",
+        "duration",
+        "email",
+        "hostname",
+        "idn-email",
+        "idn-hostname",
+        "ipv4",
+        "ipv6",
+        "iri",
+        "iri-reference",
+        "json-pointer",
+        "regex",
+        "relative-json-pointer",
+        "time",
+        "uri",
+        "uri-reference",
+        "uri-template",
+        "uuid",
+    }
+)
+
+_FORMAT_VALIDATORS: dict[str, jsonschema_rs.Draft202012Validator] = {}
+
+
+def _get_format_validator(format: str) -> jsonschema_rs.Draft202012Validator:
+    """Get or create a cached validator for checking a specific format."""
+    if format not in _FORMAT_VALIDATORS:
+        _FORMAT_VALIDATORS[format] = jsonschema_rs.Draft202012Validator(
+            {"type": "string", "format": format}, validate_formats=True
+        )
+    return _FORMAT_VALIDATORS[format]
+
+
+def conforms_to_format(value: Any, format: str) -> bool:
+    """Check if a value conforms to a JSON Schema format."""
+    return _get_format_validator(format).is_valid(value)
+
+
+def _remove_examples(schema: dict[str, Any]) -> dict[str, Any]:
+    """Recursively remove 'examples' field from a schema for jsonschema-rs compatibility."""
+    result = {}
+    for key, value in schema.items():
+        if key == "examples":
+            continue
+        if isinstance(value, dict):
+            result[key] = _remove_examples(value)
+        elif isinstance(value, list):
+            result[key] = [_remove_examples(item) if isinstance(item, dict) else item for item in value]  # type: ignore[assignment]
+        else:
+            result[key] = value
+    return result
 
 
 def _replace_zero_with_nonzero(x: float) -> float:
@@ -157,7 +213,7 @@ class CoverageContext:
     is_required: bool
     path: list[str | int]
     custom_formats: dict[str, st.SearchStrategy]
-    validator_cls: type[jsonschema.protocols.Validator]
+    validator_cls: type[jsonschema_rs.Validator]
     _resolver: RefResolver | None
     allow_extra_parameters: bool
 
@@ -184,7 +240,7 @@ class CoverageContext:
         is_required: bool,
         path: list[str | int] | None = None,
         custom_formats: dict[str, st.SearchStrategy],
-        validator_cls: type[jsonschema.protocols.Validator],
+        validator_cls: type[jsonschema_rs.Validator],
         _resolver: RefResolver | None = None,
         allow_extra_parameters: bool = True,
     ) -> None:
@@ -478,7 +534,7 @@ def _cover_positive_for_type(
             if len(all_of) == 1:
                 yield from cover_schema_iter(ctx, all_of[0])
             else:
-                with suppress(jsonschema.SchemaError):
+                with suppress(jsonschema_rs.ValidationError):
                     for idx, sub_schema in enumerate(all_of):
                         if isinstance(sub_schema, dict) and "$ref" in sub_schema:
                             all_of[idx] = ctx.resolve_ref(sub_schema["$ref"])
@@ -518,11 +574,11 @@ def _ignore_unfixable(
     # Cache exception types here as `jsonschema` uses a custom `__getattr__` on the module level
     # and it may cause errors during the interpreter shutdown
     ref_error: type[Exception] = RefResolutionError,
-    schema_error: type[Exception] = jsonschema.SchemaError,
+    schema_error: type[Exception] = jsonschema.exceptions.SchemaError,
 ) -> Generator:
     try:
         yield
-    except (Unsatisfiable, ref_error, schema_error):
+    except (Unsatisfiable, ref_error, jsonschema_rs.ValidationError, schema_error):
         pass
     except InvalidArgument as exc:
         message = str(exc)
@@ -854,9 +910,12 @@ def cover_schema_iter(
                             yield from cover_schema_iter(nctx, canonical, seen)
                 elif key == "anyOf":
                     nctx = ctx.with_negative()
-                    resolver = ctx.resolver
+                    # Resolve refs before creating validators
+                    resolved_schemas = [
+                        ctx.resolve_ref(s["$ref"]) if isinstance(s, dict) and "$ref" in s else s for s in value
+                    ]
                     # Use Draft7 for validation since schemas are converted to Draft7 format (prefixItems -> items)
-                    validators = [jsonschema.Draft7Validator(sub_schema, resolver=resolver) for sub_schema in value]
+                    validators = [jsonschema_rs.Draft7Validator(sub_schema) for sub_schema in resolved_schemas]
                     for idx, sub_schema in enumerate(value):
                         with nctx.at(idx):
                             for value in cover_schema_iter(nctx, sub_schema, seen):
@@ -866,9 +925,12 @@ def cover_schema_iter(
                                 yield value
                 elif key == "oneOf":
                     nctx = ctx.with_negative()
-                    resolver = ctx.resolver
+                    # Resolve refs before creating validators
+                    resolved_schemas = [
+                        ctx.resolve_ref(s["$ref"]) if isinstance(s, dict) and "$ref" in s else s for s in value
+                    ]
                     # Use Draft7 for validation since schemas are converted to Draft7 format (prefixItems -> items)
-                    validators = [jsonschema.Draft7Validator(sub_schema, resolver=resolver) for sub_schema in value]
+                    validators = [jsonschema_rs.Draft7Validator(sub_schema) for sub_schema in resolved_schemas]
                     for idx, sub_schema in enumerate(value):
                         with nctx.at(idx):
                             for value in cover_schema_iter(nctx, sub_schema, seen):
@@ -881,7 +943,7 @@ def cover_schema_iter(
                     yield from _flip_generation_mode_for_not(cover_schema_iter(pctx, value, seen))
 
 
-def is_valid_for_others(value: Any, idx: int, validators: list[jsonschema.Validator]) -> bool:
+def is_valid_for_others(value: Any, idx: int, validators: list[jsonschema_rs.Validator]) -> bool:
     for vidx, validator in enumerate(validators):
         if idx == vidx:
             # This one is being negated
@@ -891,7 +953,7 @@ def is_valid_for_others(value: Any, idx: int, validators: list[jsonschema.Valida
     return False
 
 
-def is_invalid_for_oneOf(value: Any, idx: int, validators: list[jsonschema.Validator]) -> bool:
+def is_invalid_for_oneOf(value: Any, idx: int, validators: list[jsonschema_rs.Validator]) -> bool:
     valid_count = 0
     for vidx, validator in enumerate(validators):
         if idx == vidx:
@@ -1491,16 +1553,22 @@ def _negative_required(
 
 
 def _is_invalid_hostname(v: Any) -> bool:
-    return v == "" or not jsonschema.Draft202012Validator.FORMAT_CHECKER.conforms(v, "hostname")
+    return v == "" or not conforms_to_format(v, "hostname")
 
 
 def _is_invalid_format(v: Any, format: str) -> bool:
-    return not jsonschema.Draft202012Validator.FORMAT_CHECKER.conforms(v, format)
+    return not conforms_to_format(v, format)
 
 
 def _negative_format(
     ctx: CoverageContext, schema: JsonSchemaObject, format: str
 ) -> Generator[GeneratedValue, None, None]:
+    # Only generate negative format cases for formats that have validation semantics.
+    # In OpenAPI 3.0, `format` is an annotation and does NOT impose validation constraints by itself.
+    # Formats like "password" have no validation - any string is valid.
+    # We can only generate truly invalid data for formats in VALIDATED_FORMATS (e.g., "email", "uri", "uuid").
+    if format not in VALIDATED_FORMATS:
+        return
     # Hypothesis-jsonschema does not canonicalise it properly right now, which leads to unsatisfiable schema
     without_format = {k: v for k, v in schema.items() if k != "format"}
     without_format.setdefault("type", "string")
@@ -1508,11 +1576,10 @@ def _negative_format(
         # Empty path parameters are invalid
         without_format["minLength"] = 1
     strategy = from_schema(without_format)
-    if format in jsonschema.Draft202012Validator.FORMAT_CHECKER.checkers:
-        if format == "hostname":
-            strategy = strategy.filter(_is_invalid_hostname)
-        else:
-            strategy = strategy.filter(functools.partial(_is_invalid_format, format=format))
+    if format == "hostname":
+        strategy = strategy.filter(_is_invalid_hostname)
+    else:
+        strategy = strategy.filter(functools.partial(_is_invalid_format, format=format))
     yield NegativeValue(
         ctx.generate_from(strategy),
         scenario=CoverageScenario.INVALID_FORMAT,
@@ -1635,12 +1702,15 @@ def _negative_type(
             del schema["pattern"]
             return
 
-    validator = ctx.validator_cls(
-        schema,
-        format_checker=jsonschema.Draft202012Validator.FORMAT_CHECKER,
-    )
-    is_valid = validator.is_valid
+    if isinstance(schema, dict) and BUNDLE_STORAGE_KEY in ctx.root_schema:
+        schema = dict(schema)
+        schema[BUNDLE_STORAGE_KEY] = ctx.root_schema[BUNDLE_STORAGE_KEY]
+
+    schema = _remove_examples(schema)
+
     try:
+        validator = ctx.validator_cls(schema, validate_formats=True)
+        is_valid = validator.is_valid
         is_valid(None)
         apply_validation = True
     except Exception:
@@ -1648,6 +1718,9 @@ def _negative_type(
         # In such a scenario it is better to generate at least something with some chances to have a false
         # positive failure
         apply_validation = False
+
+        def is_valid(x: object) -> bool:
+            return True
 
     def _does_not_match_the_original_schema(value: Any) -> bool:
         return not is_valid(str(value))

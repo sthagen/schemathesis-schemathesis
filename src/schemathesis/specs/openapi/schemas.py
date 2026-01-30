@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, NoReturn, cast
 
 import jsonschema
+import jsonschema_rs
 from packaging import version
 from requests.structures import CaseInsensitiveDict
 
@@ -365,13 +366,13 @@ class OpenApiSchema(BaseSchema):
             raise InvalidSchema.from_reference_resolution_error(error, path=path, method=method) from None
         try:
             self.validate()
-        except jsonschema.ValidationError as exc:
+        except jsonschema_rs.ValidationError as exc:
             raise InvalidSchema.from_jsonschema_error(
                 exc,
                 path=path,
                 method=method,
                 config=self.config.output,
-                location=SchemaLocation.maybe_from_error_path(list(exc.absolute_path), self.specification.version),
+                location=SchemaLocation.maybe_from_error_path(exc.instance_path, self.specification.version),
             ) from None
         raise InvalidSchema(SCHEMA_ERROR_SUGGESTION, path=path, method=method) from error
 
@@ -622,7 +623,7 @@ class OpenApiSchema(BaseSchema):
 
         try:
             validator = definition.get_validator_for_schema(resolved.media_type, resolved.schema)
-        except jsonschema.SchemaError as exc:
+        except jsonschema_rs.ValidationError as exc:
             raise InvalidSchema.from_jsonschema_error(
                 exc,
                 path=operation.path,
@@ -668,19 +669,12 @@ class OpenApiSchema(BaseSchema):
 
         try:
             validator.validate(data)
-        except jsonschema.SchemaError as exc:
-            raise InvalidSchema.from_jsonschema_error(
-                exc,
-                path=operation.path,
-                method=operation.method,
-                config=self.config.output,
-                location=SchemaLocation.response_schema(self.specification.version),
-            ) from exc
-        except jsonschema.ValidationError as exc:
+        except jsonschema_rs.ValidationError as exc:
             failures.append(
                 JsonSchemaError.from_exception(
                     operation=operation.label,
                     exc=exc,
+                    root_schema=resolved.schema,
                     config=operation.schema.config.output,
                     name_to_uri=resolved.name_to_uri,
                 )
