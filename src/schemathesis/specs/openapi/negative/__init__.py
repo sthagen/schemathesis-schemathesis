@@ -20,6 +20,9 @@ from schemathesis.transport.serialization import Binary
 from .mutations import MutationContext, MutationMetadata
 
 SYNTAX_FUZZING_PROBABILITY = 0.05
+# Use FancyRegexOptions to support lookahead/lookbehind assertions common in ECMA-262 patterns,
+# with a large size limit to handle schemas with large quantifiers (e.g., {1,51200})
+_PATTERN_OPTIONS = jsonschema_rs.FancyRegexOptions(size_limit=1_000_000_000)
 
 if TYPE_CHECKING:
     from .types import Draw, Schema
@@ -120,6 +123,7 @@ def get_validator(cache_key: CacheKey) -> jsonschema_rs.Validator:
         cache_key.schema,
         formats=dict.fromkeys(cache_key.custom_format_names | _ALWAYS_INVALID_FORMATS, _always_invalid),
         validate_formats=True,
+        pattern_options=_PATTERN_OPTIONS,
     )
 
 
