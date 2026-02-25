@@ -2,10 +2,19 @@
 
 ## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.10.2...HEAD) - TBD
 
+### :bug: Fixed
+
+- False positive `negative_data_rejection` for `application/xml` bodies in the coverage phase due to type mutations producing wire-identical bytes. [#3525](https://github.com/schemathesis/schemathesis/issues/3525)
+- Coverage phase generating schema-invalid positive values for schemas with `anyOf`/`oneOf` and `required` constraints. [#3520](https://github.com/schemathesis/schemathesis/issues/3520)
+- `missing_required_header` now accepts `400`, `401`, `403`, and `422` (in addition to `406`) for missing non-`Authorization` required headers. [#3521](https://github.com/schemathesis/schemathesis/issues/3521)
+- Coverage phase silently replacing path parameter values with `"value"` when a custom format (e.g., `ipv4-network`) generates strings containing `/`. [#3527](https://github.com/schemathesis/schemathesis/issues/3527)
+
 ### :wrench: Changed
 
 - Avoid extra transitive dependencies from `jsonschema`.
 - Remove `colorama` from dependencies.
+- Support for `pyrate-limiter>=4.0`.
+- Use pytest 9 native subtests and drop `pytest-subtests` dependency. [#3522](https://github.com/schemathesis/schemathesis/issues/3522)
 
 ## [4.10.2](https://github.com/schemathesis/schemathesis/compare/v4.10.1...v4.10.2) - 2026-02-15
 
