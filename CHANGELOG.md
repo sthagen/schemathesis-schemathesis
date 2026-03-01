@@ -4,14 +4,25 @@
 
 ### :rocket: Added
 
+- OpenAPI 3.2 `QUERY` HTTP method support.
 - Server-Sent Events (`text/event-stream`) response validation. [#3064](https://github.com/schemathesis/schemathesis/issues/3064)
 
 ### :bug: Fixed
 
+- `ValueError: Unsupported type: 'Binary'` crash in the coverage phase when a `oneOf`/`anyOf` schema has a sub-schema with `format: binary` array items.
 - False positive `negative_data_rejection` for `application/xml` bodies in the coverage phase due to type mutations producing wire-identical bytes. [#3525](https://github.com/schemathesis/schemathesis/issues/3525)
+- False positive `negative_data_rejection` in the fuzzing phase for integer/number path parameters when string type mutations serialize to URL-decoded numeric values (e.g., `%2B1` -> `+1`).
 - Coverage phase generating schema-invalid positive values for schemas with `anyOf`/`oneOf` and `required` constraints. [#3520](https://github.com/schemathesis/schemathesis/issues/3520)
 - `missing_required_header` now accepts `400`, `401`, `403`, and `422` (in addition to `406`) for missing non-`Authorization` required headers. [#3521](https://github.com/schemathesis/schemathesis/issues/3521)
 - Coverage phase silently replacing path parameter values with `"value"` when a custom format (e.g., `ipv4-network`) generates strings containing `/`. [#3527](https://github.com/schemathesis/schemathesis/issues/3527)
+- Examples phase not escaping path examples containing `/` when some path parameters were generated from schema. [#3533](https://github.com/schemathesis/schemathesis/issues/3533)
+
+### :rocket: Performance
+
+- ~2x faster negative test generation for operations with complex schemas. Schema reference resolution is now skipped entirely for ref-free schemas and cached across repeated calls for schemas with references.
+- Avoid unnecessary serialization during negative test generation.
+- Cache `can_negate` results during negative test generation.
+- Upgrade to `jsonschema-rs` 0.43.0 and use `validator_cls_for` for draft detection.
 
 ### :wrench: Changed
 

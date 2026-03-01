@@ -7,12 +7,21 @@ on:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   SCHEMATHESIS_BENCHMARK_SEED: "42"
 
 jobs:
   benchmarks:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        shard: [1, 2, 3, 4]
+    name: "Run benchmarks (Shard #${{ matrix.shard }})"
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -25,5 +34,5 @@ jobs:
         uses: CodSpeedHQ/action@v4
         with:
           token: ${{ secrets.CODSPEED_TOKEN }}
-          mode: "instrumentation"
-          run: uvx --from=".[bench]" pytest benches/* --codspeed -p no:schemathesis -p no:hypothesispytest -p no:subtests -p no:anyio
+          mode: "simulation"
+          run: uvx --from=pytest --with=".[bench]" pytest benches/* --codspeed -p no:schemathesis -p no:hypothesispytest -p no:subtests -p no:anyio --test-group=${{ matrix.shard }} --test-group-count=4
