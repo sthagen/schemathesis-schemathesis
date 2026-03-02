@@ -5,10 +5,12 @@
 ### :rocket: Added
 
 - OpenAPI 3.2 `QUERY` HTTP method support.
+- OpenAPI 3.2 `in: querystring` parameters support.
 - Server-Sent Events (`text/event-stream`) response validation. [#3064](https://github.com/schemathesis/schemathesis/issues/3064)
 
 ### :bug: Fixed
 
+- OpenAPI 3.1 schemas using legacy Draft 4 exclusive bounds (`exclusiveMinimum: true`) had the constraint silently ignored, making the affected range untestable.
 - `ValueError: Unsupported type: 'Binary'` crash in the coverage phase when a `oneOf`/`anyOf` schema has a sub-schema with `format: binary` array items.
 - False positive `negative_data_rejection` for `application/xml` bodies in the coverage phase due to type mutations producing wire-identical bytes. [#3525](https://github.com/schemathesis/schemathesis/issues/3525)
 - False positive `negative_data_rejection` in the fuzzing phase for integer/number path parameters when string type mutations serialize to URL-decoded numeric values (e.g., `%2B1` -> `+1`).
@@ -16,13 +18,18 @@
 - `missing_required_header` now accepts `400`, `401`, `403`, and `422` (in addition to `406`) for missing non-`Authorization` required headers. [#3521](https://github.com/schemathesis/schemathesis/issues/3521)
 - Coverage phase silently replacing path parameter values with `"value"` when a custom format (e.g., `ipv4-network`) generates strings containing `/`. [#3527](https://github.com/schemathesis/schemathesis/issues/3527)
 - Examples phase not escaping path examples containing `/` when some path parameters were generated from schema. [#3533](https://github.com/schemathesis/schemathesis/issues/3533)
+- Unresolvable `$ref`s inside parameter `content` schemas now reported as schema errors at load time instead of crashing at generation time.
 
 ### :rocket: Performance
 
 - ~2x faster negative test generation for operations with complex schemas. Schema reference resolution is now skipped entirely for ref-free schemas and cached across repeated calls for schemas with references.
 - Avoid unnecessary serialization during negative test generation.
+- Replace `json.dumps(sort_keys=True)` with `jsonschema_rs.canonical.json.to_string` for faster serialization.
+- Patch `hypothesis-jsonschema` to use `jsonschema_rs.canonical.json.to_string` instead of a custom encoder.
 - Cache `can_negate` results during negative test generation.
 - Upgrade to `jsonschema-rs` 0.43.0 and use `validator_cls_for` for draft detection.
+- Replace custom `deepclone` implementation with `jsonschema_rs.canonical.schema.clone`.
+- Speed up the `hypothesis-jsonschema` patch layer by caching repeated merges and skipping identity merges
 
 ### :wrench: Changed
 
