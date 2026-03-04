@@ -2,6 +2,28 @@
 
 ## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.11.0...HEAD) - TBD
 
+### :rocket: Added
+
+- Support filesystem paths for `SCHEMATHESIS_HOOKS`.
+
+### :memo: Documentation
+
+- "Triaging Failures" guide.
+- "Docker" guide.
+
+### :bug: Fixed
+
+- Misconfigured `[auth.openapi.*]` scheme names (e.g. typos) now emit a `UserWarning` in pytest mode, matching the existing CLI behavior. [#3575](https://github.com/schemathesis/schemathesis/issues/3575)
+- False positive `negative_data_rejection` for `application/xml` body string fields in the fuzzing phase due to type mutations producing wire-identical strings (e.g. `False` -> `"False"`). [#3525](https://github.com/schemathesis/schemathesis/issues/3525)
+- Internal `ValueError` when validating a response containing lone Unicode surrogate characters (e.g. `\uDCF3`); now reported as a `JSON deserialization error` since lone surrogates are invalid JSON per RFC 8259.
+- False positive `negative_data_rejection` for `format: hostname` in OpenAPI 3.0.x during the coverage phase. [#3567](https://github.com/schemathesis/schemathesis/issues/3567)
+- `Schema at` path in failure messages showing internal bundled form (e.g. `/x-bundled/schema1/...`) instead of the original schema path (e.g. `/components/schemas/.../`).
+- Missing positive test data for `format: duration` during the coverage phase.
+
+### :wrench: Changed
+
+- Set `SCHEMATHESIS_HOOKS` to `/app/hooks.py` in Docker images with a stub hooks file to simplify the UX.
+
 ## [4.11.0](https://github.com/schemathesis/schemathesis/compare/v4.10.2...v4.11.0) - 2026-03-03
 
 ### :rocket: Added

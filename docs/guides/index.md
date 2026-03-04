@@ -2,6 +2,9 @@
 
 ## Getting Started
 
+### [Triaging Failures](triage.md)
+Work through a large number of failures systematically — from easy batch fixes to individual investigation.
+
 ### [Optimizing for Maximum Bug Detection](config-optimization.md)
 Configure Schemathesis for thorough testing when preparing for production releases or conducting security assessments.
 
@@ -13,8 +16,11 @@ Validate API responses against your schema in existing test suites without using
 
 ## Integration
 
-### [CI/CD Integration](cicd.md)  
+### [CI/CD Integration](cicd.md)
 Integrate Schemathesis into automated testing pipelines. Includes GitHub Actions, GitLab CI configurations, and reporting best practices.
+
+### [Using Schemathesis with Docker](docker.md)
+Run Schemathesis without installing Python — covers file schemas, hooks, reports, and TraceCov coverage.
 
 ### [Testing Python Web Applications](python-apps.md)
 Test Flask, FastAPI, and other Python web apps directly without network overhead.

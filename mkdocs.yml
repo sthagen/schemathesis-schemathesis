@@ -12,10 +12,12 @@ nav:
 
   - How-To Guides:
       - guides/index.md
+      - Triaging Failures: guides/triage.md
       - Config Optimization: guides/config-optimization.md
       - guides/auth.md
       - guides/schema-conformance.md
       - guides/cicd.md
+      - Docker: guides/docker.md
       - guides/coverage.md
       - guides/python-apps.md
       - guides/custom-media-types.md
