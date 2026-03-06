@@ -1,6 +1,8 @@
 # Changelog
 
-## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.11.0...HEAD) - TBD
+## [Unreleased](https://github.com/schemathesis/schemathesis/compare/v4.11.1...HEAD) - TBD
+
+## [4.11.1](https://github.com/schemathesis/schemathesis/compare/v4.11.0...v4.11.1) - 2026-03-05
 
 ### :rocket: Added
 
@@ -13,12 +15,20 @@
 
 ### :bug: Fixed
 
+- Server-Sent Events: Ignore invalid `retry` field values.
+- Server-Sent Events: Treat empty `event` fields as `message`.
+- `[auth.openapi.*]` HTTP Basic authentication now correctly applied when using WSGI or ASGI apps in pytest mode. [#3575](https://github.com/schemathesis/schemathesis/issues/3575)
 - Misconfigured `[auth.openapi.*]` scheme names (e.g. typos) now emit a `UserWarning` in pytest mode, matching the existing CLI behavior. [#3575](https://github.com/schemathesis/schemathesis/issues/3575)
 - False positive `negative_data_rejection` for `application/xml` body string fields in the fuzzing phase due to type mutations producing wire-identical strings (e.g. `False` -> `"False"`). [#3525](https://github.com/schemathesis/schemathesis/issues/3525)
 - Internal `ValueError` when validating a response containing lone Unicode surrogate characters (e.g. `\uDCF3`); now reported as a `JSON deserialization error` since lone surrogates are invalid JSON per RFC 8259.
 - False positive `negative_data_rejection` for `format: hostname` in OpenAPI 3.0.x during the coverage phase. [#3567](https://github.com/schemathesis/schemathesis/issues/3567)
 - `Schema at` path in failure messages showing internal bundled form (e.g. `/x-bundled/schema1/...`) instead of the original schema path (e.g. `/components/schemas/.../`).
 - Missing positive test data for `format: duration` during the coverage phase.
+- Path generation now keeps explicit user-provided slash values (custom string formats, examples, and overrides) while still rejecting implicit and negative slash mutations to prevent misrouting. [#3571](https://github.com/schemathesis/schemathesis/issues/3571)
+- Warning count in the final summary line now reflects the number of distinct warning kinds shown, not just `missing_auth` operations.
+- False positive `use_after_free` when the server reuses freed resource IDs and a re-created resource is accessed in the same scenario. [#3582](https://github.com/schemathesis/schemathesis/issues/3582)
+- Correctly resolve `$ref` inside `oneOf`/`anyOf` sub-schemas during the coverage phase. [#3584](https://github.com/schemathesis/schemathesis/issues/3584)
+- `pytest.from_fixture().exclude()` (and `.include()`) intermittently failing with "does not match any API operations" on repeated runs when no `[[operations]]` are configured in `schemathesis.toml`. [#3572](https://github.com/schemathesis/schemathesis/issues/3572)
 
 ### :wrench: Changed
 

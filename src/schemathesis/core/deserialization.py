@@ -227,6 +227,9 @@ class ServerSentEvent(TypedDict):
     retry: NotRequired[str]
 
 
+SSE_RETRY_RE = re.compile(r"^[0-9]+$")
+
+
 def _flush_sse_event(
     current_event: dict[str, Any],
     current_data_lines: list[str],
@@ -235,9 +238,10 @@ def _flush_sse_event(
 ) -> ServerSentEvent | None:
     if not current_data_lines:
         return None
+    event_type = current_event.get("event") or "message"
     event: ServerSentEvent = {
         "data": "\n".join(current_data_lines),
-        "event": current_event.get("event", "message"),
+        "event": event_type,
     }
     if "id" in current_event:
         event["id"] = current_event["id"]
@@ -278,8 +282,11 @@ def _parse_sse_events(content: bytes, encoding: str = "utf-8") -> list[ServerSen
                 value = ""
             if field == "data":
                 current_data_lines.append(value)
-            elif field in ("retry", "event"):
+            elif field == "event":
                 current_event[field] = value
+            elif field == "retry":
+                if SSE_RETRY_RE.fullmatch(value):
+                    current_event[field] = value
             elif field == "id":
                 # Per WHATWG SSE spec: ignore id fields containing null characters
                 if "\x00" not in value:
